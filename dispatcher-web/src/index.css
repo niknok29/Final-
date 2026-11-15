@@ -1667,15 +1667,22 @@ select {
 
 .sim-btn-row,
 .sim-slider-row,
-.sim-burst-row,
-.sim-provider-row {
+.sim-burst-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
+.sim-provider-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
 .sim-provider-row .sim-btn {
-  flex: 1;
+  width: 100%;
+  padding: 5px 6px;
+  font-size: 11px;
 }
 
 .sim-btn-active-ring {

@@ -87,6 +87,94 @@ function sortSosByPriorityAndTime(items) {
   })
 }
 
+function applyProviderTelemetry(state, payload) {
+  if (!payload || typeof payload !== 'object') return state
+  const rawProvider = payload.state || payload.routingProvider
+  const rawStatus = payload.status
+  const rawBreaker = payload.breaker
+  const rawOffline = payload.offline
+
+  if (
+    rawProvider === 'up' &&
+    rawStatus !== 'degraded' &&
+    rawBreaker !== 'open' &&
+    !rawOffline
+  ) {
+    return {
+      ...state,
+      healthStatus: 'ok',
+      routingProvider: 'up',
+      routingBreaker: 'closed',
+      routingOffline: false,
+      routingFallbackMode: null,
+      routingNotice: null,
+    }
+  }
+
+  const nextBreaker =
+    rawBreaker === 'open' || rawBreaker === 'closed' ? rawBreaker : state.routingBreaker
+
+  let nextProvider = state.routingProvider || 'up'
+  if (rawProvider === 'http503' || rawProvider === 'slow' || rawProvider === 'degraded') {
+    nextProvider = rawProvider
+  } else if (rawProvider === 'down') {
+    if (state.routingProvider === 'http503') {
+      nextProvider = 'http503'
+    } else if (state.routingProvider === 'slow' && nextBreaker !== 'open') {
+      nextProvider = 'slow'
+    } else {
+      nextProvider = 'down'
+    }
+  } else if (rawStatus === 'degraded') {
+    nextProvider = state.routingProvider !== 'up' ? state.routingProvider : 'degraded'
+  } else if (rawBreaker === 'open' && state.routingProvider === 'up') {
+    nextProvider = 'down'
+  }
+
+  const nextOffline =
+    typeof rawOffline === 'boolean'
+      ? rawOffline
+      : nextProvider === 'down' || nextProvider === 'http503' || nextBreaker === 'open'
+
+  const inferredFallback =
+    nextProvider === 'http503'
+      ? 'static_matrix'
+      : nextProvider === 'slow'
+        ? 'cache'
+        : nextOffline
+          ? 'straight_line'
+          : null
+
+  const nextFallbackMode =
+    payload.fallbackMode !== undefined
+      ? payload.fallbackMode
+      : state.routingFallbackMode || inferredFallback
+
+  const nextNotice =
+    payload.notice !== undefined
+      ? payload.notice && typeof payload.notice === 'object'
+        ? payload.notice
+        : null
+      : { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null }
+
+  const nextHealthStatus =
+    rawStatus === 'ok' || rawStatus === 'degraded'
+      ? rawStatus
+      : nextProvider === 'up' && nextBreaker === 'closed' && !nextOffline
+        ? 'ok'
+        : 'degraded'
+
+  return {
+    ...state,
+    healthStatus: nextHealthStatus,
+    routingProvider: nextProvider,
+    routingBreaker: nextBreaker,
+    routingOffline: nextOffline,
+    routingFallbackMode: nextFallbackMode,
+    routingNotice: nextNotice,
+  }
+}
+
 function createInitialState() {
   const stored = getStoredSession()
   return {
@@ -94,8 +182,12 @@ function createInitialState() {
     dashboard: EMPTY_DASHBOARD,
     loadingDashboard: Boolean(stored),
     connectionStatus: 'live',
+    healthStatus: 'ok',
     routingProvider: 'up',
     routingBreaker: 'closed',
+    routingOffline: false,
+    routingFallbackMode: null,
+    routingNotice: null,
     sosFilter: 'all',
     priorityOnlyFilter: false,
     recentSosIds: [],
@@ -162,11 +254,7 @@ function reducer(state, action) {
       const { type, data } = action.payload || {}
       if (!type || !data) return state
       if (type === 'provider.updated') {
-        return {
-          ...state,
-          routingProvider: data.state || state.routingProvider,
-          routingBreaker: data.breaker || state.routingBreaker,
-        }
+        return applyProviderTelemetry(state, data)
       }
       const d = state.dashboard
       let next = d
@@ -215,22 +303,8 @@ function reducer(state, action) {
     case 'SET_CONNECTION_STATUS':
       return { ...state, connectionStatus: action.payload }
 
-    case 'SET_HEALTH_STATUS': {
-      const { routingProvider, breaker } = action.payload || {}
-      const nextBreaker = breaker || state.routingBreaker
-      let nextProvider = state.routingProvider
-      if (routingProvider === 'up') {
-        nextProvider = 'up'
-      } else if (routingProvider === 'down') {
-        nextProvider =
-          state.routingProvider === 'slow' && nextBreaker !== 'open' ? 'slow' : 'down'
-      }
-      return {
-        ...state,
-        routingProvider: nextProvider,
-        routingBreaker: nextBreaker,
-      }
-    }
+    case 'SET_HEALTH_STATUS':
+      return applyProviderTelemetry(state, action.payload)
 
     case 'SET_SOS_FILTER':
       return { ...state, sosFilter: action.payload }
@@ -342,14 +416,21 @@ export function DashboardProvider({ children }) {
     try {
       const [snapshot, health] = await Promise.all([
         getDashboard(),
-        getHealth().catch(() => ({ routingProvider: 'down' })),
+        getHealth().catch(() => ({
+          status: 'degraded',
+          routingProvider: 'down',
+          breaker: 'open',
+          offline: true,
+          fallbackMode: 'straight_line',
+          notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+        })),
       ])
       dispatch({ type: 'SET_DASHBOARD', payload: snapshot })
-      if (health?.routingProvider || health?.breaker) {
+      if (health && typeof health === 'object') {
         dispatch({ type: 'SET_HEALTH_STATUS', payload: health })
       }
     } catch {
-      // Handled by api callbacks on 401/429
+      // Handled by api callbacks on 401/429 or timeout
     }
   }, [])
 
@@ -364,13 +445,20 @@ export function DashboardProvider({ children }) {
     const healthInterval = setInterval(async () => {
       try {
         const health = await getHealth()
-        if (health?.routingProvider || health?.breaker) {
+        if (health && typeof health === 'object') {
           dispatch({ type: 'SET_HEALTH_STATUS', payload: health })
         }
       } catch {
         dispatch({
           type: 'SET_HEALTH_STATUS',
-          payload: { routingProvider: 'down', breaker: 'open' },
+          payload: {
+            status: 'degraded',
+            routingProvider: 'down',
+            breaker: 'open',
+            offline: true,
+            fallbackMode: 'straight_line',
+            notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+          },
         })
       }
     }, 20000)
@@ -572,14 +660,35 @@ export function DashboardProvider({ children }) {
   const handleSimSetProvider = useCallback(
     async (nextState) => {
       try {
-        await simSetProvider(nextState)
+        const res = await simSetProvider(nextState)
+        const inferredBreaker =
+          nextState === 'up'
+            ? 'closed'
+            : nextState === 'http503' || nextState === 'down'
+              ? 'open'
+              : state.routingBreaker
+        const inferredFallback =
+          nextState === 'http503'
+            ? 'static_matrix'
+            : nextState === 'slow'
+              ? 'cache'
+              : nextState === 'down'
+                ? 'straight_line'
+                : null
+
         dispatch({
           type: 'APPLY_WS_EVENT',
           payload: {
             type: 'provider.updated',
             data: {
+              ...(res && typeof res === 'object' ? res : {}),
               state: nextState,
-              breaker: nextState === 'up' ? 'closed' : state.routingBreaker,
+              routingProvider: nextState,
+              status: nextState === 'up' ? 'ok' : 'degraded',
+              breaker: inferredBreaker,
+              offline: nextState === 'down' || nextState === 'http503',
+              fallbackMode: res?.fallbackMode ?? inferredFallback,
+              notice: nextState === 'up' ? null : { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
             },
           },
         })
@@ -596,7 +705,18 @@ export function DashboardProvider({ children }) {
       const result = await simReset()
       dispatch({
         type: 'APPLY_WS_EVENT',
-        payload: { type: 'provider.updated', data: { state: 'up', breaker: 'closed' } },
+        payload: {
+          type: 'provider.updated',
+          data: {
+            state: 'up',
+            routingProvider: 'up',
+            status: 'ok',
+            breaker: 'closed',
+            offline: false,
+            fallbackMode: null,
+            notice: null,
+          },
+        },
       })
       if (result?.sos && result?.alerts) {
         dispatch({ type: 'SET_DASHBOARD', payload: result })

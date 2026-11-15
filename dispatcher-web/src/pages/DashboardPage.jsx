@@ -11,9 +11,36 @@ import { useDashboard } from '../state/dashboardStore.js'
 
 export function DashboardPage() {
   const { t } = useTranslation()
-  const { routingProvider, routingBreaker } = useDashboard()
-  const isHardDown = routingProvider === 'down' || routingBreaker === 'open'
-  const showBackupRouteBanner = isHardDown || routingProvider === 'slow'
+  const {
+    healthStatus,
+    routingProvider,
+    routingBreaker,
+    routingOffline,
+    routingFallbackMode,
+    routingNotice,
+  } = useDashboard()
+
+  const isHardOutage =
+    routingOffline === true ||
+    routingBreaker === 'open' ||
+    routingProvider === 'down' ||
+    routingProvider === 'http503' ||
+    routingNotice?.code === 'OFFLINE_BACKUP_ROUTE_MODE'
+  const showBackupRouteBanner =
+    isHardOutage ||
+    healthStatus === 'degraded' ||
+    routingProvider === 'slow' ||
+    routingProvider === 'degraded'
+  const isSlowOnly =
+    routingProvider === 'slow' &&
+    routingBreaker !== 'open' &&
+    !routingOffline &&
+    routingNotice?.code !== 'OFFLINE_BACKUP_ROUTE_MODE'
+
+  const stateChipLabel =
+    routingProvider === 'http503'
+      ? 'HTTP 503'
+      : String(routingProvider || healthStatus || 'degraded').toUpperCase()
 
   return (
     <div className="dashboard-shell">
@@ -22,7 +49,7 @@ export function DashboardPage() {
       {showBackupRouteBanner && (
         <div
           className={`backup-route-banner ${
-            isHardDown ? 'backup-route-banner-down' : 'backup-route-banner-slow'
+            isSlowOnly ? 'backup-route-banner-slow' : 'backup-route-banner-down'
           }`}
           role="status"
           aria-live="polite"
@@ -30,13 +57,18 @@ export function DashboardPage() {
           <div className="backup-route-banner-left">
             <span className="backup-route-tag">{t('header.backupModeTag')}</span>
             <span className="backup-route-text">
-              {isHardDown ? t('header.backupModeNotice') : t('header.backupModeSlowNotice')}
+              {isSlowOnly ? t('header.backupModeSlowNotice') : t('header.backupModeNotice')}
             </span>
           </div>
           <div className="backup-route-banner-right">
-            <span className="backup-route-chip">
-              {routingProvider === 'down' ? 'HTTP 503' : routingProvider.toUpperCase()}
-            </span>
+            <span className="backup-route-chip">{stateChipLabel}</span>
+            {routingFallbackMode && (
+              <span className="backup-route-chip">
+                {t(`header.fallbackModes.${routingFallbackMode}`, {
+                  defaultValue: routingFallbackMode,
+                })}
+              </span>
+            )}
             <span className="backup-route-chip">
               {routingBreaker === 'open' ? t('header.breakerOpen') : t('header.breakerClosed')}
             </span>

@@ -199,6 +199,15 @@ export function SimulationDrawer() {
             >
               {t('sim.providerDown')}
             </button>
+            <button
+              type="button"
+              className={`sim-btn sim-btn-danger ${
+                routingProvider === 'http503' ? 'sim-btn-active-ring' : ''
+              }`}
+              onClick={() => handleSimSetProvider('http503')}
+            >
+              {t('sim.providerHttp503')}
+            </button>
           </div>
           <span className="sim-coords-hint">
             {routingBreaker === 'open' ? t('header.breakerOpen') : t('header.breakerClosed')}

@@ -106,20 +106,21 @@
 
 ---
 
-## 4. Routing Provider Outage (HTTP 503), Circuit Breaker & Backup Route Mode (Drop 2 / Section J)
+## 4. Routing Provider Outage (HTTP 503), Circuit Breaker & Offline Backup Route Mode (Drop 2 / Sections J & K)
 
-- **Live Backend Default (`src/api/client.js` & `.env.example`):**
+- **Live Backend Default & 8s Request Guard (`src/api/client.js` & `.env.example`):**
   - `USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'` ensures the dashboard defaults to the live FastAPI backend even when `.env` is absent; `.env.example` ships with `VITE_API_URL=http://localhost:8000` and `VITE_USE_MOCK=false`.
+  - `apiFetch` wraps all requests in an 8-second `AbortController` timeout so simulated `>5s` upstream latency never stalls or crashes the UI.
+  - `simSetProvider(state)` sends `"up" | "down" | "slow" | "http503"` to `POST /api/sim/provider` and automatically falls back from `"http503"` to `{"state": "down"}` on HTTP `400`/`422` if running against a pre-Section-K backend.
 - **Health Initialization & Live Telemetry (`GET /api/health` + `WS provider.updated`):**
-  - On initial load and WebSocket reconnect (`onReconnectResync`), `getHealth()` queries `GET /api/health`, receiving `{ status, routingProvider: "up" | "down" | "slow", breaker: "closed" | "open" }`.
-  - Live WebSocket `provider.updated` events (`{ state: "up" | "down" | "slow", breaker: "closed" | "open" }`) immediately update `routingProvider` and `routingBreaker` in `DashboardContext` without reloading.
-- **Backend Circuit Breaker & Haversine Fallback (`backend/app/routing.py`):**
+  - On initial load, 20-second polling, and WebSocket reconnect (`onReconnectResync`), `getHealth()` / `provider.updated` normalize `{ status: "ok" | "degraded", routingProvider: "up" | "down" | "slow" | "http503" | "degraded", breaker: "closed" | "open", offline: boolean, fallbackMode: null | "cache" | "static_matrix" | "straight_line", notice: null | { code: "OFFLINE_BACKUP_ROUTE_MODE", message } }` defensively in `DashboardContext`.
+- **Backend Circuit Breaker & Fallback Modes (`backend/app/routing.py`):**
   - Supports `MockProvider` (default) or `OsrmProvider` (`ROUTING_PROVIDER=osrm`, optional `MOCK_ROUTING_DOWN=1`).
-  - `CircuitBreaker(threshold=3, cooldown=30.0)` with a `2.0s` upstream request timeout (and `3.0s` simulated delay in `slow` mode) opens after 3 failures for a 30-second cooldown, serving Haversine straight-line `"fallback"` routes so route queries remain non-blocking.
-- **Header Pill, Backup Route Mode Banner & Simulation Controls (`Header.jsx`, `DashboardPage.jsx`, `SimulationDrawer.jsx`):**
-  - `Header.jsx` displays the color-coded Routing Provider pill (`UP` green, `SLOW` amber, `DOWN` red) alongside the live circuit breaker badge (`breaker: closed` / `breaker: open`).
-  - `DashboardPage.jsx` renders a localized **"Backup route mode"** notice banner (`HTTP 503` / `SLOW` + breaker state) whenever `routingProvider` is `"down"` or `"slow"` or `breaker === "open"`.
-  - `SimulationDrawer.jsx` exposes **Up**, **Slow**, and **Down (HTTP 503)** controls wired to `POST /api/sim/provider` (`{"state": "up" | "down" | "slow"}`) with active-state highlighting and toast confirmation; `POST /api/sim/reset` restores `up` / `closed` state.
+  - `CircuitBreaker` trips on repeated failures/timeouts, falling back safely across `cache`, `static_matrix`, or Haversine `straight_line` strategies without blocking dispatchers.
+- **Header Pill, Offline/Backup Route Mode Banner & Simulation Controls (`Header.jsx`, `DashboardPage.jsx`, `SimulationDrawer.jsx`):**
+  - `Header.jsx` displays the severity-coded Routing Provider pill (`UP` green, `SLOW` / `DEGRADED` amber, `DOWN` / `HTTP 503` red) alongside the live circuit breaker badge (`breaker: closed` / `breaker: open`).
+  - `DashboardPage.jsx` renders a localized **"Offline / backup route mode"** banner (showing active state + `fallbackMode` chip) whenever `offline === true`, `notice?.code === "OFFLINE_BACKUP_ROUTE_MODE"`, `healthStatus === "degraded"`, `routingProvider` is `"down" | "slow" | "http503" | "degraded"`, or `breaker === "open"`.
+  - `SimulationDrawer.jsx` exposes **Up**, **Slow (>5s)**, **Down**, and **HTTP 503** controls wired to `POST /api/sim/provider`, and `POST /api/sim/reset` restores `up` / `closed` state.
 
 ---
 

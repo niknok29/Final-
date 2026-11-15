@@ -1,7 +1,8 @@
-import { USE_MOCK } from './client.js'
+import { clearSession, USE_MOCK } from './client.js'
 import { subscribeMockEvents } from './mock.js'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const WS_OPEN_CONFIRM_MS = 300
 
 function buildWsUrl(token, lang = 'az') {
   const wsBase = API_BASE_URL.replace(/^http/i, 'ws')
@@ -34,8 +35,16 @@ export function connectDispatcherWS({
   let closedByCaller = false
   let socket = null
   let reconnectTimer = null
+  let openConfirmTimer = null
   let attempt = 0
   let hasConnectedOnce = false
+
+  function clearOpenConfirmTimer() {
+    if (openConfirmTimer) {
+      clearTimeout(openConfirmTimer)
+      openConfirmTimer = null
+    }
+  }
 
   function scheduleReconnect() {
     if (closedByCaller) return
@@ -50,6 +59,8 @@ export function connectDispatcherWS({
   function connect() {
     if (closedByCaller || !token) return
 
+    clearOpenConfirmTimer()
+
     try {
       socket = new WebSocket(buildWsUrl(token, lang))
     } catch {
@@ -57,7 +68,12 @@ export function connectDispatcherWS({
       return
     }
 
-    socket.onopen = () => {
+    let confirmedOpen = false
+
+    function confirmOpen() {
+      if (closedByCaller || confirmedOpen) return
+      confirmedOpen = true
+      clearOpenConfirmTimer()
       const wasReconnect = hasConnectedOnce
       hasConnectedOnce = true
       attempt = 0
@@ -67,7 +83,16 @@ export function connectDispatcherWS({
       }
     }
 
+    socket.onopen = () => {
+      if (closedByCaller) return
+      clearOpenConfirmTimer()
+      openConfirmTimer = setTimeout(() => {
+        confirmOpen()
+      }, WS_OPEN_CONFIRM_MS)
+    }
+
     socket.onmessage = (event) => {
+      confirmOpen()
       try {
         const envelope = JSON.parse(event.data)
         if (envelope?.type) {
@@ -83,6 +108,7 @@ export function connectDispatcherWS({
     }
 
     socket.onclose = (event) => {
+      clearOpenConfirmTimer()
       if (closedByCaller) return
       if (event?.code === 1008) {
         closedByCaller = true
@@ -90,6 +116,7 @@ export function connectDispatcherWS({
           clearTimeout(reconnectTimer)
           reconnectTimer = null
         }
+        clearSession()
         onAuthFailure?.()
         return
       }
@@ -101,6 +128,7 @@ export function connectDispatcherWS({
 
   return () => {
     closedByCaller = true
+    clearOpenConfirmTimer()
     if (reconnectTimer) {
       clearTimeout(reconnectTimer)
       reconnectTimer = null

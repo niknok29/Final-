@@ -526,6 +526,7 @@ function createInitialState() {
 let state = createInitialState()
 let providerState = 'up'
 let breakerState = 'closed'
+let fallbackModeState = null
 let sosSeq = 107
 let alertSeq = 2
 let autoFeedIndex = 0
@@ -855,16 +856,57 @@ export async function mockGetRoads() {
   return clone({ items: state.roads })
 }
 
-export async function mockGetHealth() {
+function buildMockProviderHealth() {
+  if (providerState === 'up' && breakerState === 'closed') {
+    return {
+      status: 'ok',
+      state: 'up',
+      routingProvider: 'up',
+      breaker: 'closed',
+      offline: false,
+      fallbackMode: null,
+      notice: null,
+    }
+  }
+  if (providerState === 'slow') {
+    return {
+      status: 'degraded',
+      state: 'slow',
+      routingProvider: 'slow',
+      breaker: breakerState,
+      offline: false,
+      fallbackMode: fallbackModeState || 'cache',
+      notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+    }
+  }
+  if (providerState === 'http503') {
+    return {
+      status: 'degraded',
+      state: 'http503',
+      routingProvider: 'http503',
+      breaker: 'open',
+      offline: true,
+      fallbackMode: fallbackModeState || 'static_matrix',
+      notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+    }
+  }
   return {
-    status: 'ok',
-    routingProvider: providerState === 'up' && breakerState === 'closed' ? 'up' : 'down',
-    breaker: breakerState,
+    status: 'degraded',
+    state: 'down',
+    routingProvider: 'down',
+    breaker: 'open',
+    offline: true,
+    fallbackMode: fallbackModeState || 'straight_line',
+    notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
   }
 }
 
+export async function mockGetHealth() {
+  return buildMockProviderHealth()
+}
+
 export async function mockSimSetProvider(nextState) {
-  if (!['up', 'down', 'slow'].includes(nextState)) {
+  if (!['up', 'down', 'slow', 'http503'].includes(nextState)) {
     throw Object.assign(new Error('Invalid provider state'), {
       status: 422,
       code: 'VALIDATION_ERROR',
@@ -873,9 +915,20 @@ export async function mockSimSetProvider(nextState) {
   providerState = nextState
   if (nextState === 'up') {
     breakerState = 'closed'
+    fallbackModeState = null
+  } else if (nextState === 'slow') {
+    breakerState = 'closed'
+    fallbackModeState = 'cache'
+  } else if (nextState === 'http503') {
+    breakerState = 'open'
+    fallbackModeState = 'static_matrix'
+  } else {
+    breakerState = 'open'
+    fallbackModeState = 'straight_line'
   }
-  emitEvent('provider.updated', { state: providerState, breaker: breakerState })
-  return { ok: true, state: providerState }
+  const health = buildMockProviderHealth()
+  emitEvent('provider.updated', health)
+  return { ok: true, ...health }
 }
 
 export async function mockApproveAlert(alertId) {
@@ -1077,11 +1130,12 @@ export async function mockSimReset() {
   state = createInitialState()
   providerState = 'up'
   breakerState = 'closed'
+  fallbackModeState = null
   sosSeq = 107
   alertSeq = 2
   autoFeedIndex = 0
   stopMockStreams()
-  emitEvent('provider.updated', { state: 'up', breaker: 'closed' })
+  emitEvent('provider.updated', buildMockProviderHealth())
   if (subscribers.size > 0) {
     startMockStreams()
   }
