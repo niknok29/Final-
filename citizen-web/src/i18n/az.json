@@ -116,5 +116,21 @@
   "sosNeedsAttention": "SOS üçün əl ilə müdaxilə lazımdır — çatdırılma təsdiqlənməyib.",
   "sosAttempts": "Göndərmə cəhdləri: {{count}} / 3",
   "sosRetryCountdown": "Növbəti cəhd {{count}} saniyə sonra (bağlantı olduqda).",
-  "sosManualHelp": "Bu qeyd saxlanılıb. Avtomatik göndərmə dayandırılıb. Təcili xidmətlərlə birbaşa əlaqə saxlayın və ya hazır olduqda yeni SOS göndərin."
+  "sosManualHelp": "Bu qeyd saxlanılıb. Avtomatik göndərmə dayandırılıb. Təcili xidmətlərlə birbaşa əlaqə saxlayın və ya hazır olduqda yeni SOS göndərin.",
+  "TIMEOUT": "Server 5 saniyə ərzində cavab vermədi.",
+  "backupClientWarning": "Bu cihazda saxlanmış məlumatlar istifadə olunur. Şərait və əlçatanlıq təsdiqlənməyib. Ehtiyat təxmin bağlı yollardan keçə bilər; ətrafınızı yoxlayın.",
+  "accessibilityUnverified": "Marşrutun əlçatanlığı təsdiqlənməyib",
+  "fallbackMode": "Ehtiyat mənbə",
+  "mode_client_cache": "Bu cihazda saxlanılıb (client_cache)",
+  "mode_cache": "Server marşrut yaddaşı",
+  "mode_static_matrix": "Server ehtiyat təxmini",
+  "mode_straight_line": "Düz xətt üzrə təxmin",
+  "devOutages": "Sınaq üçün kəsinti nümunələri",
+  "devMode": "Sınaq rejimi",
+  "dev_live": "Canlı / bərpa",
+  "dev_offline": "Şəbəkə kəsintisi",
+  "dev_backup": "Server offline=true nümunəsi",
+  "dev_http503": "HTTP 503 nümunəsi",
+  "dev_latency": "6 saniyə gecikmə (5 saniyə limit)",
+  "devOutageHelp": "Yalnız yerli sınaq üçündür. Bərpa canlı sorğuları qaytarır; gözləyən SOS qeydlərinin cəhd sayı sıfırlanmır."
 }

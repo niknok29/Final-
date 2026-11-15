@@ -732,3 +732,25 @@ h2 {
     margin: 0 13px 24px;
   }
 }
+.dev-controls {
+  margin: 16px 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px dashed #64748b;
+  border-radius: 8px;
+}
+.dev-controls summary {
+  cursor: pointer;
+  min-height: 32px;
+  font-weight: 600;
+}
+.dev-controls select {
+  max-width: 100%;
+  padding: 8px;
+}
+.dev-controls label {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}

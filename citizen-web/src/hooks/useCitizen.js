@@ -4,24 +4,45 @@ import {
   useEffectEvent,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   api,
   getNearestShelters,
   getRoute,
   connectCitizen,
+  getCachedSnapshot,
+  getCachedRoute,
+  getCachedNearest,
+  getClientOffline,
+  subscribeClientOffline,
+  rememberLiveUpdate,
+  rememberRoute,
 } from "../api/client";
 
 export default function useCitizen({ position, selected, profile, lang }) {
-  const [snapshot, setSnapshot] = useState({
-    districts: [],
-    shelters: [],
-    roads: [],
-  });
-  const [nearest, setNearest] = useState([]);
-  const [routeResult, setRouteResult] = useState(null);
+  const [snapshot, setSnapshot] = useState(() => getCachedSnapshot(lang));
+  const [nearest, setNearest] = useState(
+    () =>
+      getCachedNearest({ lat: position[0], lng: position[1], lang })?.items ||
+      [],
+  );
   const requestKey = JSON.stringify([position, selected, profile, lang]);
+  const [routeResult, setRouteResult] = useState(() => ({
+    key: requestKey,
+    data: getCachedRoute({
+      lat: position[0],
+      lng: position[1],
+      shelterId: selected,
+      profile,
+      lang,
+    }),
+  }));
   const routeData = routeResult?.key === requestKey ? routeResult.data : null;
+  const clientOffline = useSyncExternalStore(
+    subscribeClientOffline,
+    getClientOffline,
+  );
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState(null);
   const [routeError, setRouteError] = useState(null);
@@ -36,18 +57,27 @@ export default function useCitizen({ position, selected, profile, lang }) {
     const controller = new AbortController();
     const load = async () => {
       try {
-        const [d, s, r] = await Promise.all([
+        const results = await Promise.allSettled([
           api.getDistricts(lang, controller.signal),
           api.getShelters(lang, controller.signal),
           api.getRoads(lang, controller.signal),
         ]);
         if (!controller.signal.aborted) {
-          setSnapshot({
-            districts: d.items,
-            shelters: s.items,
-            roads: r.items,
-          });
-          setDataError(null);
+          const kinds = ["districts", "shelters", "roads"];
+          setSnapshot((old) => ({
+            ...old,
+            ...Object.fromEntries(
+              results.flatMap((result, index) =>
+                result.status === "fulfilled"
+                  ? [[kinds[index], result.value.items]]
+                  : [],
+              ),
+            ),
+          }));
+          setDataError(
+            results.find((result) => result.status === "rejected")?.reason ||
+              null,
+          );
         }
       } catch (error) {
         if (!controller.signal.aborted) setDataError(error);
@@ -63,7 +93,17 @@ export default function useCitizen({ position, selected, profile, lang }) {
     const timer = setTimeout(async () => {
       version = ++routeVersion.current;
       setLoading(true);
-      setRouteResult(null);
+      // Retain a matching backup while the bounded live refresh is pending.
+      setRouteResult({
+        key: requestKey,
+        data: getCachedRoute({
+          lat: position[0],
+          lng: position[1],
+          shelterId: selected,
+          profile,
+          lang,
+        }),
+      });
       setRouteError(null);
       try {
         const result = await getNearestShelters(
@@ -135,6 +175,13 @@ export default function useCitizen({ position, selected, profile, lang }) {
         return;
       routeVersion.current++;
       setRouteResult({ data, key: requestKey });
+      rememberRoute(data, {
+        lat: position[0],
+        lng: position[1],
+        shelterId: selected || data.requestedShelterId,
+        profile,
+        lang,
+      });
       setRouteError(null);
       setLoading(false);
       setNotice({ reason: data.reason, id: Date.now(), key: requestKey });
@@ -142,6 +189,7 @@ export default function useCitizen({ position, selected, profile, lang }) {
     }
     if (type === "shelter.updated" || type === "road.updated") {
       const key = type === "shelter.updated" ? "shelters" : "roads";
+      rememberLiveUpdate(key, data, lang);
       setSnapshot((old) => ({
         ...old,
         [key]: old[key].some((x) => x.id === data.id)
@@ -164,11 +212,23 @@ export default function useCitizen({ position, selected, profile, lang }) {
     () => connectCitizen(lang, onEvent, setConnection, retry),
     [lang, retry],
   );
+  useEffect(() => {
+    window.addEventListener("online", retry);
+    window.addEventListener("offline", retry);
+    const timer =
+      clientOffline || routeData?.offline ? setInterval(retry, 10000) : null;
+    return () => {
+      window.removeEventListener("online", retry);
+      window.removeEventListener("offline", retry);
+      if (timer) clearInterval(timer);
+    };
+  }, [clientOffline, routeData?.offline, retry]);
 
   return {
     ...snapshot,
     nearest,
     routeData,
+    clientOffline,
     loading,
     dataError,
     routeError,

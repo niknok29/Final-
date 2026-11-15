@@ -15,6 +15,7 @@ import "./App.css";
 import { USE_MOCK, markSafe } from "./api/client";
 import useCitizen from "./hooks/useCitizen";
 import useSosQueue from "./hooks/useSosQueue";
+import DevOutageControls from "./DevOutageControls";
 import {
   routeNoticeKey,
   routeWarningKey,
@@ -312,7 +313,9 @@ export default function App() {
   const routeData = data.routeData;
   const path = routeData?.route?.path || EMPTY_PATH;
   const destination = routeData?.shelter;
-  const offlineNotice = routeNoticeKey(routeData);
+  const offlineNotice = data.clientOffline
+    ? "OFFLINE_BACKUP_ROUTE_MODE"
+    : routeNoticeKey(routeData);
   function selectShelter(id) {
     if (id !== destination?.id) setSelected(id);
   }
@@ -415,8 +418,15 @@ export default function App() {
         {offlineNotice && (
           <div className="notice warning offline-notice" role="status">
             {t(offlineNotice)}
+            <p>
+              {t("fallbackMode")}:{" "}
+              {t(`mode_${routeData?.fallbackMode || "client_cache"}`, {
+                defaultValue: t("mode_client_cache"),
+              })}
+            </p>
           </div>
         )}
+        {import.meta.env.DEV && <DevOutageControls onChange={data.retry} />}
         <div className="content-grid">
           <section className="map-card" aria-label={t("liveMap")}>
             <div className="card-heading">
@@ -619,9 +629,14 @@ export default function App() {
                   <p>
                     <span className="badge">
                       {t(
-                        routeData.accessible
-                          ? "accessibleRoute"
-                          : "notAccessible",
+                        data.clientOffline ||
+                          ["client_cache", "straight_line"].includes(
+                            routeData.fallbackMode,
+                          )
+                          ? "accessibilityUnverified"
+                          : routeData.accessible
+                            ? "accessibleRoute"
+                            : "notAccessible",
                       )}
                     </span>{" "}
                     · {t(routeData.transport)}

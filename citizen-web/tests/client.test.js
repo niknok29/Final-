@@ -77,7 +77,8 @@ test("Citizen API contract and reliability", async (t) => {
       for (const name of ["getDistricts", "getShelters", "getRoads"]) {
         await api[name]("en", controller.signal);
         assert.equal(calls.at(-1).url.searchParams.get("lang"), "en");
-        assert.equal(calls.at(-1).options.signal, controller.signal);
+        assert.ok(calls.at(-1).options.signal instanceof AbortSignal);
+        assert.equal(calls.at(-1).options.signal.aborted, false);
       }
       await getNearestShelters(40.41, 49.86, 3, "az", controller.signal);
       assert.equal(calls.at(-1).url.searchParams.get("limit"), "3");

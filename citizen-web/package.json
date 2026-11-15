@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test tests/client.test.js tests/sosQueue.test.js",
+    "test": "node --test tests/client.test.js tests/sosQueue.test.js tests/offline.test.js",
     "test:integration": "node --test tests/backend.integration.js",
     "preview": "vite preview"
   },

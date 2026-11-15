@@ -116,5 +116,21 @@
   "sosNeedsAttention": "SOS needs manual attention — not confirmed delivered.",
   "sosAttempts": "Sending attempts: {{count}} / 3",
   "sosRetryCountdown": "Next retry in {{count}} seconds (when online).",
-  "sosManualHelp": "This record is retained. Automatic sending has stopped. Contact emergency services directly or submit a new SOS when ready."
+  "sosManualHelp": "This record is retained. Automatic sending has stopped. Contact emergency services directly or submit a new SOS when ready.",
+  "TIMEOUT": "The server did not respond within 5 seconds.",
+  "backupClientWarning": "Using saved data from this device. Conditions and accessibility are unverified. A backup estimate may cross blocked roads; check your surroundings.",
+  "accessibilityUnverified": "Route accessibility unverified",
+  "fallbackMode": "Backup source",
+  "mode_client_cache": "Saved on this device (client_cache)",
+  "mode_cache": "Server route cache",
+  "mode_static_matrix": "Server backup estimate",
+  "mode_straight_line": "Straight-line estimate",
+  "devOutages": "Development outage fixtures",
+  "devMode": "Test mode",
+  "dev_live": "Live / recovery",
+  "dev_offline": "Network outage",
+  "dev_backup": "Server offline=true fixture",
+  "dev_http503": "HTTP 503 fixture",
+  "dev_latency": "6-second latency (5-second timeout)",
+  "devOutageHelp": "Local development only. Recovery restores live requests; pending SOS records keep their original attempt budget."
 }
