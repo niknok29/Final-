@@ -2,7 +2,7 @@ import uuid
 
 from sqlmodel import Session, select
 
-from app import alerts, realtime, services
+from app import alerts, flood, realtime, services
 from app.db import engine
 from app.models import Alert, Crew, Road, Shelter
 
@@ -50,6 +50,7 @@ def test_profile_registry_is_used_when_profile_omitted(client, headers):
     client.get("/api/route", params={**ORIGIN, "citizenId": cid, "profile": "special_needs"})
     post_sos(client, cid=cid)  # no profile -> remembered special_needs
     assert client.get("/api/sos", headers=headers).json()["items"][0]["priority"] == "critical"
+    flood.reset()  # the same citizen + type within 60 s would otherwise be answered as a duplicate (Drop 3)
     post_sos(client, "standard", cid=cid)  # explicit value wins and is remembered
     assert realtime.hub.profiles[cid] == "standard"
 

@@ -321,3 +321,49 @@ Adds `"state": "up"|"down"|"slow"|"http503"` — the exact provider simulation s
 
 ### L.9 Load test
 `python backend/tools/loadtest.py [--base-url http://127.0.0.1:8000] [--requests 200] [--no-sos]` fires N concurrent requests (60 % `GET /api/shelters`, 10 % `POST /api/sos`, 30 % `GET /api/route`) and prints p50/p95/max per endpoint and the status-code counts. `POST /api/sos` writes real rows (use `--no-sos` or the sim Reset afterwards); 429 counts as the limiter working, not as an error. Use `127.0.0.1`, not `localhost`, on Windows (the IPv6 fallback adds ~200 ms per new connection).
+
+---
+## M. SOS flood / spam defence & RBAC hardening (additive, v1.6)
+Nothing in A–L is removed or renamed. A normal citizen never sees a difference; an attacker sees cheap 429s.
+
+### M.1 `POST /api/sos` admission (decided BEFORE the database, in this order)
+| step | result | when |
+|---|---|---|
+| per-IP limit | `429 RATE_LIMITED` + `Retry-After` | more than 10 SOS/min from one IP (unchanged) |
+| duplicate filter | `200 {"id","status":"active","createdAt","duplicate":true}` — the EXISTING SOS, no new row, no events, no budget spent | same `citizenId` + same `type` within 60 s, or same IP + same ~50 m grid cell + same `type` within 30 s. A `special_needs` SOS is never answered with a `standard` one. "I am safe" (`POST /api/safe`) forgets the citizen's duplicates. |
+| per-citizen limit | `429 CITIZEN_RATE_LIMITED` + `Retry-After` | more than 3 SOS/min with one `citizenId` |
+| global budget | `429 SOS_FLOOD_THROTTLED` + `Retry-After` | more than `SOS_GLOBAL_PER_MIN` (300) admitted SOS/min. **`profile:"special_needs"` has a reserved budget and is never throttled by this step** (still bound by the per-IP / per-citizen limits). |
+| accept | `201 {"id","status","createdAt"}` | otherwise — same body as before, also for quarantined SOS (the sender is never told) |
+
+Clients should treat `200 + duplicate:true` as success (keep the returned `id`) and honour `Retry-After` on 429.
+
+### M.2 Flood quarantine
+More than `SOS_FLOOD_THRESHOLD` (60) accepted SOS in a rolling 60 s = **flood mode**. While it is on, a new SOS from a sender that is not trusted is stored with `trust:"suspicious"` and is **excluded from**: the alert engine (`SOS_CLUSTER` counts only `trust:"normal"`), `GET /api/dashboard` (`sos`, `stats.activeSos`, zone counts), `GET /api/sos` (unless `includeSuspicious=true`) and every per-item WS event (`sos.created` / `sos.updated` / `zone.updated`). **Trusted** (never quarantined): `special_needs` profile (per citizen), a request carrying a valid dispatcher/admin Bearer token (that IP is then trusted for 1 h), and the sim burst (`/api/sim/sos-burst`). Known limit: `profile` is self-declared by the citizen app, so it bypasses the global budget and quarantine; it is still capped by the per-IP and per-citizen limits.
+The `sos` table gets `trust` (`normal`|`suspicious`) and `ip_hash` (salted hash, the raw IP is never stored; existing databases are migrated in place). Sos objects in API/WS payloads gain `"trust"`.
+
+### M.3 Dispatcher visibility
+* `GET /api/dashboard`: `stats.suspiciousSos` (active quarantined rows, int) and `stats.flood` = `{"active":bool,"suspiciousLastMinute":int}`. `sos` is capped at the **200** most relevant active SOS (priority first, then newest); `stats.activeSos` and zone counts are the true totals.
+* `GET /api/sos?includeSuspicious=true` — also returns quarantined rows (default `false`).
+* WS `sos.flood` (dispatchers): `{"type":"sos.flood","data":{"active":bool,"suspiciousCount":int,"windowSeconds":60}}`, `suspiciousCount` = SOS quarantined in the last `windowSeconds`. Coalesced: at most one event per 2 s; sent while the flood is active and once more when it ends. Under flood `zone.updated` is coalesced to at most one per zone per second (the last state is always delivered).
+* `POST /api/sos/suspicious/clear` (permission `dispatch`) → `{"ok":true,"removed":n}` purges all quarantined rows.
+* `POST /api/sim/flood` `{"count":600}` (1–5000, permission `simulate`) pushes N fake SOS (random citizens/IPs, ~10 % repeats, ~25 % same coordinates, ~3 % special_needs) through the REAL pipeline → `{"ok":true,"accepted":n,"duplicates":n,"throttled":n,"suspicious":n}` (`suspicious` ⊂ `accepted`). Use sim **Reset** afterwards.
+
+### M.4 Auth / RBAC
+* Tokens are HS256 only (`alg:none` and anything else is rejected) and must carry `exp`, `iat`, `sub`, `role`, `iss` (`crisis-evac-engine`) and `aud` (`crisis-dispatch`); both are validated. Tokens issued before this version are invalid: log in again.
+* `PERMISSIONS`: `dispatcher` {view, dispatch}, `admin` {view, dispatch, simulate}. Env `SIM_ROLES` (default `dispatcher,admin`) lists roles that also get `simulate`, so the dispatcher UI's simulation drawer keeps working; set `SIM_ROLES=admin` to lock it down.
+* `401 UNAUTHORIZED`: missing / invalid / expired / wrong iss-aud token. `403 FORBIDDEN`: valid token whose role is unknown or lacks the permission. Required: `view` for dashboard / SOS list / crews / alerts list / WS `/ws/dispatcher`; `dispatch` for alert approve/dismiss and `suspicious/clear`; `simulate` for `/api/sim/*`.
+* `GET /api/auth/me` (any valid token) → `{"username","role","permissions":["dispatch","simulate","view"]}` (sorted).
+* Audit log (`backend/audit.log`): new events `access.denied` (every 403, with user, role, ip, method, path, permission) and `sos.suspicious.clear`; approve/dismiss were already logged. Writes are buffered by a background thread (never block a request).
+
+### M.5 Performance notes
+`GET /api/route` results are cached 2 s per (50 m origin cell, shelterId, profile, lang); offline/backup answers are never cached and a provider state/breaker change clears the cache. Hot read endpoints (`/api/health`, `/shelters`, `/roads`, `/districts`, `/route` on a cache hit) are answered without a worker-thread hop. SQLite runs in WAL mode with a 30 s busy timeout. Quarantined SOS are written in batches (≤ 250 ms delay; every reader flushes first, so views are never stale).
+
+### M.6 Env vars (new)
+`SOS_GLOBAL_PER_MIN` (300), `SOS_CITIZEN_PER_MIN` (3), `SOS_FLOOD_THRESHOLD` (60), `SIM_ROLES` (`dispatcher,admin`), `JWT_ISSUER`, `JWT_AUDIENCE`, `IP_HASH_SALT` (random per process if unset). Existing: `RATE_LIMIT_SOS` (10), `RATE_LIMIT_GLOBAL` (300), `JWT_SECRET`, …
+
+### M.7 Run command (production-like, ONE worker, no reload)
+`uvicorn app.main:app --port 8000 --no-access-log --log-level warning`
+Do not use `--reload` (it adds a file watcher and a second process) or several `--workers`: the rate limits, dedupe, quarantine and caches live in process memory, so each worker would have its own copy.
+
+### M.8 Load test
+`python tools/loadtest.py --scenario flood [--pace-seconds 3] [--procs 4] --base-url http://127.0.0.1:8000` — 600 SOS (600 random citizens, ~10 % duplicates, ~25 % same coordinates) + 200 GET shelters/route from several processes, while a dispatcher polls `GET /api/dashboard` every 200 ms. `--pace-seconds 0` (default) releases everything in the same instant (stress); `3` spreads it over 3 s. From one IP the per-IP limit rejects most SOS cheaply; start the server with `RATE_LIMIT_SOS=100000 RATE_LIMIT_GLOBAL=100000` to simulate a distributed attack that reaches the real pipeline. No third-party packages are needed.

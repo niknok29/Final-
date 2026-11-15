@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
+from . import cache as response_cache
 from .util import haversine
 
 log = logging.getLogger("crisis.routing")
@@ -113,6 +114,7 @@ def _changed(force: bool = False):
     global _last
     snap = status()
     if force or snap != _last:
+        response_cache.invalidate()  # cached provider routes must not outlive a state / breaker change
         _last = snap
         if listener:
             listener(snap)

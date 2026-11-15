@@ -54,5 +54,5 @@ def sos_out(x: Sos) -> dict:
     return {
         "id": x.id, "citizenId": x.citizen_id, "type": x.type, "lat": x.lat, "lng": x.lng,
         "note": x.note, "zoneId": x.zone_id, "status": x.status, "createdAt": iso(x.created_at),
-        "profile": x.profile, "priority": x.priority, "priorityRank": x.priority_rank,
+        "profile": x.profile, "priority": x.priority, "priorityRank": x.priority_rank, "trust": x.trust,
     }
