@@ -177,3 +177,22 @@ On every reconnect, call GET /api/dashboard again to resync.
 ---
 ## MOCK MODE (so you can work before the backend is ready)
 Frontends must have an API layer `src/api/` with a switch `VITE_USE_MOCK=true` that returns fixtures shaped EXACTLY like the examples above, and a fake event emitter that simulates WebSocket events every few seconds. Switching to the real backend = set `VITE_USE_MOCK=false`. Nothing else may change.
+
+---
+## H. Backend implementation notes (additions & clarifications, v1.1)
+Everything above still holds. These items were unspecified or are strictly additive; frontends should rely on them.
+
+1. **`GET /api/route` — optional `citizenId=<uuid>` query param (ADDITIVE).** When sent, the backend remembers the shelter the citizen is heading to, so it can push a `reroute` over `WS /ws/citizen`. Without it, no `reroute` push is possible for that citizen. Send it on every route request.
+2. **`reroute` WS message:** `data.message` is the stable code `ROUTE_CHANGED`; `data.reason` carries the cause (`ROAD_CLOSED` | `SHELTER_NEARLY_FULL` | `SHELTER_FULL`). After a reroute the backend tracks the NEW shelter as the citizen's target.
+3. **Optional `lang` on WebSockets:** `/ws/citizen?citizenId=..&lang=az|en|ru` and `/ws/dispatcher?token=..&lang=..` (default `az`) localize `name`/`message` fields in pushed payloads.
+4. **WS rejection:** an invalid/missing `citizenId` (must be a UUID), an invalid/expired `token`, or a role without the `dispatch` permission closes the socket with code **1008** during the handshake (client sees a failed connection, not an `error` message).
+5. **`route.shelter`** is the full shelter object (same as `GET /api/shelters`, incl. `capacity` and `occupancy`) — a superset of the example.
+6. **`route.alternatives[].label`** is a fixed string `"Alternativ N"`; translate it client-side. When `source` is `fallback`, `alternatives` is `[]`.
+7. **Validation:** `citizenId` must be a valid UUID; `type` must be one of the hazard enums; `lat`/`lng` ranges are checked; `note` max 200. Violations → **422** `{"error":{"code":"VALIDATION_ERROR",...}}`.
+8. **Error codes in use:** `VALIDATION_ERROR` (422), `UNAUTHORIZED` (401, missing/invalid/expired token), `FORBIDDEN` (403), `INVALID_CREDENTIALS` (401, login), `SHELTER_NOT_FOUND` / `NOT_FOUND` (404), `RATE_LIMITED` (429 + `Retry-After`).
+9. **Rate limits (per client IP, in-memory):** `POST /api/sos` 10 per minute; `POST /api/auth/login` 10 per minute (login limit is an addition).
+10. **Zone `level`:** `normal` = 0 active SOS, `warning` = 1–2, `critical` = 3 or more.
+11. **Dashboard `alerts`:** the 50 most recent alerts of ALL statuses, newest first (`stats.pendingAlerts` counts only the pending ones among them). `GET /api/sos` without `status` returns both active and resolved; `GET /api/alerts` without `status` returns all.
+12. **Alert `message`** is localized by `?lang` (az/en/ru); `code` stays `RED_ALERT_SEND_CREW_OPEN_SHELTER` for both alert kinds.
+13. **Dispatcher auth:** token lifetime 3600 s (`expiresIn`); no refresh endpoint — after expiry (401) log in again. Permissions are centralized in the backend (`dispatcher` and `admin` both may use dashboard and `/api/sim/*`).
+14. **Seed data:** 12 shelters; `s9` and `s12` are reserve shelters, seeded as `closed` with 0 occupancy (alert approval opens them). `s10` starts at 100 % (`full`).

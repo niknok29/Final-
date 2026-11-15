@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from . import routing, services
+from . import realtime, routing, services
 from .db import get_session
 from .models import District, Road, Shelter, Sos, now
 from .util import get_lang, iso, loc, sos_limiter
@@ -55,9 +55,12 @@ def roads(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
 
 
 @router.get("/route")
-def route(fromLat: float, fromLng: float, shelterId: Optional[str] = None,
+def route(fromLat: float, fromLng: float, shelterId: Optional[str] = None, citizenId: Optional[UUID] = None,
           lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return services.build_route(s, fromLat, fromLng, shelterId, lang)
+    r = services.build_route(s, fromLat, fromLng, shelterId, lang)
+    if citizenId:  # remember the citizen's target so `reroute` can be pushed over WS later
+        realtime.hub.targets[str(citizenId)] = (fromLat, fromLng, r["shelter"]["id"])
+    return r
 
 
 @router.post("/sos", status_code=201, dependencies=[Depends(sos_limiter)])
@@ -68,14 +71,18 @@ def create_sos(body: SosIn, s: Session = Depends(get_session)):
     )
     s.add(x)
     s.commit()
+    realtime.sos_created(s, x)
     return {"id": x.id, "status": x.status, "createdAt": iso(x.created_at)}
 
 
 @router.post("/safe")
 def safe(body: SafeIn, s: Session = Depends(get_session)):
     cid = str(body.citizenId)
-    for x in s.exec(select(Sos).where(Sos.citizen_id == cid, Sos.status == "active")).all():
+    items = s.exec(select(Sos).where(Sos.citizen_id == cid, Sos.status == "active")).all()
+    for x in items:
         x.status = "resolved"
         s.add(x)
     s.commit()
+    for x in items:
+        realtime.sos_updated(s, x)
     return {"citizenId": cid, "status": "safe", "updatedAt": iso(now())}

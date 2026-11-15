@@ -1,8 +1,8 @@
 from sqlmodel import Session, select
 
 from . import routing
-from .models import District, Road, Shelter
-from .util import ApiError, haversine
+from .models import District, Road, Shelter, Sos
+from .util import ApiError, haversine, loc
 from .views import shelter_out
 
 BLOCK_M = 200  # a closed road within this distance of the route blocks it
@@ -10,6 +10,19 @@ BLOCK_M = 200  # a closed road within this distance of the route blocks it
 
 def nearest_district(s: Session, lat: float, lng: float) -> District:
     return min(s.exec(select(District)).all(), key=lambda d: haversine(lat, lng, d.lat, d.lng))
+
+
+def zone_level(n: int) -> str:
+    return "critical" if n >= 3 else "warning" if n >= 1 else "normal"
+
+
+def zone_dict(d: District, n: int, lang: str = "az") -> dict:
+    return {"id": d.id, "name": loc(d, lang), "lat": d.lat, "lng": d.lng, "activeSos": n, "level": zone_level(n)}
+
+
+def zone_out(s: Session, d: District, lang: str = "az") -> dict:
+    n = len(s.exec(select(Sos.id).where(Sos.zone_id == d.id, Sos.status == "active")).all())
+    return zone_dict(d, n, lang)
 
 
 def _dense(path, step=150):

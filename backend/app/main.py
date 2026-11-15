@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import auth, dispatch, realtime
 from .api import router
 from .db import init_db
 from .util import ApiError
@@ -14,6 +16,7 @@ from .util import ApiError
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    realtime.hub.loop = asyncio.get_running_loop()
     yield
 
 
@@ -23,7 +26,8 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After"],
 )
-app.include_router(router)
+for r in (router, auth.router, dispatch.router, realtime.router):
+    app.include_router(r)
 
 
 def _err(status: int, code: str, message: str, headers: dict | None = None):

@@ -25,8 +25,15 @@ def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+LANGS = ("az", "en", "ru")
+
+
+def norm_lang(lang: str) -> str:
+    return lang if lang in LANGS else "az"
+
+
 def get_lang(lang: str = Query("az")) -> str:
-    return lang if lang in ("az", "en", "ru") else "az"
+    return norm_lang(lang)
 
 
 def loc(obj, lang: str) -> str:
