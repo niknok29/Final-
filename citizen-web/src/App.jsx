@@ -15,6 +15,7 @@ import "./App.css";
 import { USE_MOCK, markSafe } from "./api/client";
 import useCitizen from "./hooks/useCitizen";
 import useSosQueue from "./hooks/useSosQueue";
+import { sosDisplayStatus } from "./services/sosQueue";
 import DevOutageControls from "./DevOutageControls";
 import {
   routeNoticeKey,
@@ -201,13 +202,12 @@ export default function App() {
   const [submitting, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [sosStatus, setSosStatus] = useState(null);
   const [message, setMessage] = useState(null);
   const sosQueue = useSosQueue((record) => {
-    setSosStatus(record.payload.profile);
     setMessage({ key: record.duplicate ? "sosDuplicate" : "sosSuccess" });
   });
   const until = sosQueue.cooldownUntil;
+  const sosStatus = sosDisplayStatus(sosQueue);
   const sending = submitting || sosQueue.sending;
   const [now, setNow] = useState(() => Date.now());
   const pending = useRef(false);
@@ -301,7 +301,6 @@ export default function App() {
     setSaving(true);
     try {
       await sosQueue.markSafe(() => markSafe(position[0], position[1]));
-      setSosStatus("safe");
       setMessage({ key: "safeSuccess" });
     } catch (error) {
       setMessage({ error, fallback: "safeError" });
@@ -641,6 +640,11 @@ export default function App() {
                     </span>{" "}
                     · {t(routeData.transport)}
                   </p>
+                  {(data.clientOffline ||
+                    routeData.fallbackMode === "client_cache") &&
+                    routeData.accessibilityNotes?.length > 0 && (
+                      <p>{t("cachedAccessibilityNotes")}</p>
+                    )}
                   <ul>
                     {routeData.accessibilityNotes?.map((key) => (
                       <li key={key}>{t(key)}</li>

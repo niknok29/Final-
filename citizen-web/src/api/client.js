@@ -309,6 +309,7 @@ async function fetchRoute(
       : mockShelters.items.find(eligible);
     if (!shelter) throw new ApiError("NO_ACCESSIBLE_ROUTE", 409);
     const distance = distanceMeters(lat, lng, shelter);
+    const offline = !env.DEV || getDevMode() === "backup";
     mockTarget = {
       shelter: localizeMock(shelter, lang),
       route: {
@@ -328,10 +329,10 @@ async function fetchRoute(
             ? "SHELTER_NOT_ACCESSIBLE"
             : "SHELTER_NEARLY_FULL",
       requestedShelterId: shelterId,
-      source: "fallback",
-      offline: true,
-      fallbackMode: "straight_line",
-      notice: mockOfflineNotice(lang),
+      source: offline ? "fallback" : "provider",
+      offline,
+      fallbackMode: offline ? "straight_line" : null,
+      notice: offline ? mockOfflineNotice(lang) : null,
       accessible: shelter.accessible,
       transport: profile === "special_needs" ? "wheelchair_medical" : "walk",
       accessibilityNotes:

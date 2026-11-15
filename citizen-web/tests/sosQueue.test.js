@@ -5,6 +5,7 @@ import {
   createSosQueue,
   SOS_COOLDOWN_MS,
   SOS_QUEUE_KEY,
+  sosDisplayStatus,
 } from "../src/services/sosQueue.js";
 const payload = {
   citizenId: "8eafc601-13d0-4f14-bd9c-400d052970a1",
@@ -161,4 +162,18 @@ test("storage write failure preserves in-memory records and is surfaced", async 
   await q.process();
   assert.equal(q.getSnapshot().records.length, 1);
   assert.equal(q.getSnapshot().storageError, true);
+});
+test("confirmed SOS/safe state survives reload; a new pending SOS is never shown as safe", async () => {
+  const f = fixture(async () => ({ id: "confirmed" }));
+  let q = f.create();
+  await q.enqueue(payload);
+  await q.process();
+  assert.equal(sosDisplayStatus(f.create().getSnapshot()), "special_needs");
+  f.advance(1);
+  await q.markSafe(async () => ({ status: "safe" }), payload.citizenId);
+  q = f.create();
+  assert.equal(sosDisplayStatus(q.getSnapshot()), "safe");
+  f.advance(10000);
+  await q.enqueue({ ...payload, type: "fire" });
+  assert.equal(sosDisplayStatus(q.getSnapshot()), null);
 });

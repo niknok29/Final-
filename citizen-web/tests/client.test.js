@@ -235,6 +235,17 @@ test("WebSocket reconnects with capped backoff; cleanup and 1008 stop retries", 
 test("section K server backup presentation distinguishes cache, matrix and straight line", () => {
   assert.equal(routeNoticeKey({ offline: true }), "OFFLINE_BACKUP_ROUTE_MODE");
   assert.equal(routeNoticeKey({ offline: false }), null);
+  assert.equal(
+    routeNoticeKey({
+      offline: false,
+      notice: { code: "OFFLINE_BACKUP_ROUTE_MODE" },
+    }),
+    "OFFLINE_BACKUP_ROUTE_MODE",
+  );
+  assert.equal(
+    routeWarningKey({ fallbackMode: "client_cache" }),
+    "backupClientWarning",
+  );
   assert.equal(routeNoticeKey(null), null);
   assert.equal(
     routeWarningKey({ fallbackMode: "cache" }),
@@ -312,6 +323,15 @@ test("actual i18next language changes translate judging UI, statuses and offline
     assert.ok(!instance.t("rateLimitedSeconds", { count: 17 }).includes("{{"));
     headings.add(instance.t("mainTitle"));
     notices.add(instance.t("OFFLINE_BACKUP_ROUTE_MODE"));
+    const rateMessages = [
+      "RATE_LIMITED",
+      "CITIZEN_RATE_LIMITED",
+      "SOS_FLOOD_THROTTLED",
+    ].map((key) => instance.t(key, { count: 17 }));
+    assert.equal(new Set(rateMessages).size, 3);
+    for (const message of rateMessages) assert.ok(message.includes("17"));
+    if (lang === "az")
+      assert.equal(instance.t("sosDuplicate"), "SOS artıq qəbul edilib");
   }
   assert.equal(headings.size, 3);
   assert.equal(notices.size, 3);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createOfflineCache, haversine } from "../src/services/offlineCache.js";
+import { setDevMode, simulateDevOutage } from "../src/api/devOutage.js";
 import {
   api,
   getRoute,
@@ -8,6 +9,7 @@ import {
   getClientOffline,
   request,
   REQUEST_TIMEOUT_MS,
+  withDeadline,
 } from "../src/api/client.js";
 const shelters = {
   items: [
@@ -247,4 +249,27 @@ test("duplicate SOS response is acknowledged even when the status is conflict", 
   assert.deepEqual(await request("/api/sos", { body: {} }), {
     duplicate: true,
   });
+});
+test("development outage fixtures model errors and latency; production transport ignores them", async (t) => {
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+    setDevMode("live");
+  });
+  setDevMode("offline");
+  await assert.rejects(simulateDevOutage(new AbortController().signal), {
+    code: "NETWORK_ERROR",
+  });
+  setDevMode("http503");
+  await assert.rejects(simulateDevOutage(new AbortController().signal), {
+    status: 503,
+  });
+  globalThis.fetch = async () => Response.json({ items: [] });
+  assert.deepEqual(await request("/api/roads"), { items: [] });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  setDevMode("latency");
+  const pending = withDeadline((signal) => simulateDevOutage(signal));
+  await Promise.resolve();
+  t.mock.timers.tick(5000);
+  await assert.rejects(pending, { code: "TIMEOUT" });
 });

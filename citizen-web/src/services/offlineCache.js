@@ -38,7 +38,7 @@ export function createOfflineCache(storage) {
           ...saved,
           routes: saved.routes.filter(
             (r) =>
-              r.context &&
+              r?.context &&
               point(r.context) &&
               point(r.data?.shelter) &&
               path(r.data?.route?.path),
@@ -65,7 +65,7 @@ export function createOfflineCache(storage) {
       Object.values(lists).sort((a, b) => b.savedAt - a.savedAt)[0];
     if (!Array.isArray(value?.data?.items)) return null;
     const items = value.data.items.filter((item) =>
-      kind === "roads" ? path(item.path) : point(item),
+      kind === "roads" ? path(item?.path) : point(item),
     );
     return { items: structuredClone(items) };
   };

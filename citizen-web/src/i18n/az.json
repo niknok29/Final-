@@ -118,6 +118,7 @@
   "sosRetryCountdown": "Növbəti cəhd {{count}} saniyə sonra (bağlantı olduqda).",
   "sosManualHelp": "Bu qeyd saxlanılıb. Avtomatik göndərmə dayandırılıb. Təcili xidmətlərlə birbaşa əlaqə saxlayın və ya hazır olduqda yeni SOS göndərin.",
   "TIMEOUT": "Server 5 saniyə ərzində cavab vermədi.",
+  "cachedAccessibilityNotes": "Əlçatanlıq barədə son məlum məlumatlar (canlı deyil)",
   "backupClientWarning": "Bu cihazda saxlanmış məlumatlar istifadə olunur. Şərait və əlçatanlıq təsdiqlənməyib. Ehtiyat təxmin bağlı yollardan keçə bilər; ətrafınızı yoxlayın.",
   "accessibilityUnverified": "Marşrutun əlçatanlığı təsdiqlənməyib",
   "fallbackMode": "Ehtiyat mənbə",

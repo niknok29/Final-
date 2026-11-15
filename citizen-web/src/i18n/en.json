@@ -118,6 +118,7 @@
   "sosRetryCountdown": "Next retry in {{count}} seconds (when online).",
   "sosManualHelp": "This record is retained. Automatic sending has stopped. Contact emergency services directly or submit a new SOS when ready.",
   "TIMEOUT": "The server did not respond within 5 seconds.",
+  "cachedAccessibilityNotes": "Last known accessibility information (not live)",
   "backupClientWarning": "Using saved data from this device. Conditions and accessibility are unverified. A backup estimate may cross blocked roads; check your surroundings.",
   "accessibilityUnverified": "Route accessibility unverified",
   "fallbackMode": "Backup source",

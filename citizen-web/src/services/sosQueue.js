@@ -1,6 +1,21 @@
 export const SOS_COOLDOWN_MS = 10000;
 export const SOS_MAX_ATTEMPTS = 3;
 export const SOS_QUEUE_KEY = "safebaku.sos-queue.v1";
+export function sosDisplayStatus(snapshot) {
+  const safeAt = snapshot.lastSafeAt || 0;
+  const delivered = snapshot.records
+    .filter((r) => r.status === "sent" && r.deliveredAt > safeAt)
+    .sort((a, b) => b.deliveredAt - a.deliveredAt)[0];
+  if (delivered) return delivered.payload.profile;
+  if (
+    safeAt &&
+    !snapshot.records.some(
+      (r) => r.createdAt > safeAt && r.status !== "cancelled",
+    )
+  )
+    return "safe";
+  return null;
+}
 
 // Queue IDs are local bookkeeping, never undocumented backend request fields.
 export function createSosQueue({
@@ -15,6 +30,7 @@ export function createSosQueue({
     records: [],
     cooldownUntil: 0,
     retryNotBefore: 0,
+    lastSafeAt: 0,
     storageError: false,
   };
   let busy = false;
@@ -54,7 +70,11 @@ export function createSosQueue({
           snapshot.cooldownUntil,
           saved.cooldownUntil || 0,
         ),
-        retryNotBefore: saved.retryNotBefore || 0,
+        retryNotBefore: Math.max(
+          snapshot.retryNotBefore,
+          saved.retryNotBefore || 0,
+        ),
+        lastSafeAt: Math.max(snapshot.lastSafeAt, saved.lastSafeAt || 0),
       };
     } catch {
       corrupt = true;
@@ -72,6 +92,7 @@ export function createSosQueue({
           records: snapshot.records,
           cooldownUntil: snapshot.cooldownUntil,
           retryNotBefore: snapshot.retryNotBefore,
+          lastSafeAt: snapshot.lastSafeAt,
         }),
       );
       dirty = false;
@@ -200,6 +221,7 @@ export function createSosQueue({
       const result = await action();
       snapshot = {
         ...snapshot,
+        lastSafeAt: now(),
         records: snapshot.records.map((r) =>
           r.payload.citizenId === citizenId &&
           ["pending", "sending"].includes(r.status)
