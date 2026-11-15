@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
 import { findCrewTargetDistance, formatDistance } from '../utils/geo.js'
@@ -12,14 +13,20 @@ function getShelterBarColor(status, percent) {
   return 'bar-open'
 }
 
-export function RightStatusPanel() {
+export const RightStatusPanel = memo(function RightStatusPanel() {
   const { t, i18n } = useTranslation()
   const { dashboard, focusMap } = useDashboard()
   const lang = i18n.language
 
-  const sortedShelters = dashboard.shelters
-    .slice()
-    .sort((a, b) => (b.occupancyPercent ?? b.percent ?? 0) - (a.occupancyPercent ?? a.percent ?? 0))
+  const sortedShelters = useMemo(
+    () =>
+      dashboard.shelters
+        .slice()
+        .sort(
+          (a, b) => (b.occupancyPercent ?? b.percent ?? 0) - (a.occupancyPercent ?? a.percent ?? 0)
+        ),
+    [dashboard.shelters]
+  )
 
   return (
     <aside className="panel panel-right" aria-label="Zones, Shelters and Crews">
@@ -160,4 +167,4 @@ export function RightStatusPanel() {
       </div>
     </aside>
   )
-}
+})

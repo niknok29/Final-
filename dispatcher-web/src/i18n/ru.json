@@ -17,7 +17,12 @@
     "demoTitle": "Демо-аккаунты (нажмите для заполнения):",
     "demoDispatcher": "Диспетчер: dispatcher / dispatcher123",
     "demoAdmin": "Админ: admin / admin123",
+    "demoObserver": "Наблюдатель (только чтение): observer / observer123",
     "error401": "Неверное имя пользователя или пароль.",
+    "errorLocked": "Слишком много неудачных попыток входа (429 LOGIN_LOCKED). Повторите через {{seconds}} сек.",
+    "errorRateLimit": "Слишком много запросов (429). Подождите {{seconds}} сек. перед повтором.",
+    "errorPayloadTooLarge": "Размер запроса превышает лимит 32 КБ (413 PAYLOAD_TOO_LARGE).",
+    "lockedButton": "Блокировка ({{seconds}}с)",
     "errorGeneric": "Ошибка входа. Попробуйте еще раз."
   },
   "header": {
@@ -45,15 +50,25 @@
     "logout": "Выход",
     "roles": {
       "dispatcher": "Диспетчер",
-      "admin": "Админ"
+      "admin": "Админ",
+      "observer": "Наблюдатель",
+      "viewer": "Просмотр"
     }
   },
   "notices": {
     "OFFLINE_BACKUP_ROUTE_MODE": "Работает в автономном / резервном режиме маршрутизации"
   },
+  "flood": {
+    "tag": "SOS FLOOD",
+    "bannerMessage": "Отфильтровано {{count}} ложных/подозрительных запросов",
+    "suspiciousChip": "подозр.: {{count}}",
+    "clearBtn": "Очистить",
+    "clearingBtn": "Очистка..."
+  },
   "stats": {
     "activeSos": "Активные SOS",
     "prioritySos": "Приоритетный SOS",
+    "suspiciousSos": "Подозрительные SOS",
     "pendingAlerts": "Красные тревоги",
     "shelters": "Убежища (Заполн. / Всего)",
     "crews": "Бригады (Доступно / Всего)"
@@ -77,11 +92,13 @@
     "dismiss": "Отклонить",
     "processing": "Выполнение...",
     "noPermission": "Недостаточно прав для действия.",
+    "noPermissionTooltip": "Нет прав доступа (режим чтения)",
     "approvedBadge": "Подтверждено"
   },
   "sos": {
     "title": "Лента SOS в реальном времени",
     "count": "Сигналов: {{count}}",
+    "cappedNotice": "Показаны первые {{shown}} из {{total}} сигналов",
     "empty": "Нет активных SOS сигналов по выбранному фильтру.",
     "noNote": "Дополнительная заметка отсутствует.",
     "flyHint": "Нажмите для перехода на карте",
@@ -104,7 +121,8 @@
     "status": {
       "active": "Активен",
       "dispatched": "Направлен",
-      "resolved": "Решен"
+      "resolved": "Решен",
+      "suspicious": "Подозрительный"
     }
   },
   "time": {
@@ -122,6 +140,9 @@
       "critical": "Критическая",
       "prioritySos": "Приоритет SOS",
       "closedRoad": "Закрытая дорога",
+      "roadblock": "Перекрытие дороги",
+      "routeExact": "Точный маршрут",
+      "routeApprox": "Прибл. маршрут",
       "shelter": "Пункт сбора",
       "crew": "Бригада"
     },
@@ -135,6 +156,8 @@
       "assignedAlert": "Назначение",
       "roadClosed": "Дорога закрыта",
       "roadOpen": "Дорога открыта",
+      "blockReason": "Причина перекрытия",
+      "roadBlockedReasonDefault": "Движение временно ограничено",
       "accessible": "Доступность",
       "accessibleTransport": "Доступный транспорт",
       "reportedAt": "Время",
@@ -144,6 +167,12 @@
       "nearestShelter": "Ближайшее убежище",
       "distanceToTarget": "Расстояние до инцидента",
       "roadLength": "Протяженность",
+      "routeTitle": "Маршрут эвакуации",
+      "routeExact": "Точная геометрия улиц (онлайн)",
+      "routeApprox": "Приблизительный маршрут (резервный/офлайн)",
+      "routeDistance": "Дистанция маршрута",
+      "routeEta": "Оцен. время",
+      "minutesShort": "мин",
       "yes": "Да (♿)",
       "no": "Нет"
     }
@@ -191,8 +220,11 @@
     "setOccupancy": "Применить",
     "burstSection": "Всплеск SOS (4 сигнала)",
     "hazardType": "Тип инцидента",
+    "notePlaceholder": "Заметка SOS (макс. 200 симв.)",
     "targetCoords": "Координаты: {{lat}}, {{lng}}",
     "sendBurst": "Отправить 4 SOS",
+    "floodBtn": "SOS Flood (600)",
+    "floodRunning": "Отправка (600)...",
     "providerSection": "Провайдер маршрутизации",
     "providerUp": "Up",
     "providerSlow": "Slow (>5s)",
@@ -209,11 +241,16 @@
     "noCrewAvailable": "Нет доступной бригады (или доступного транспорта).",
     "rateLimit": "Превышен лимит запросов (429). Подождите несколько секунд.",
     "rateLimitRetry": "Превышен лимит запросов (429). Повторите через {{seconds}} сек.",
+    "loginLocked": "Вход временно заблокирован после 5 неудачных попыток (LOGIN_LOCKED). Повторите через {{seconds}} сек.",
+    "payloadTooLarge": "Запрос отклонен: превышен лимит 32 КБ (413 PAYLOAD_TOO_LARGE).",
     "wsAuthExpired": "Сессия истекла или отклонена (WS 1008). Войдите снова.",
     "roadClosed": "Дорога закрыта: {{road}}",
     "roadOpened": "Дорога открыта: {{road}}",
     "shelterUpdated": "Заполненность {{shelter}} изменена на {{percent}}%.",
     "sosBurstSent": "Созданы 4 новых SOS сигнала в выбранной точке.",
+    "sosFloodResult": "SOS Flood (600): {{accepted}} принято, {{duplicates}} дубл., {{throttled}} лимит, {{suspicious}} подозр.",
+    "suspiciousCleared": "Подозрительные SOS-запросы очищены ({{count}}).",
+    "forbidden": "Нет прав доступа",
     "providerUpdated": "Состояние провайдера изменено: {{state}}",
     "simReset": "Симуляция сброшена к исходному состоянию.",
     "reconnected": "Соединение восстановлено, данные синхронизированы.",

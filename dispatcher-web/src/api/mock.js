@@ -1,4 +1,6 @@
+import { getRolePermissions } from '../auth/permissions.js'
 import { calculateDistanceMeters, calculatePathLengthMeters } from '../utils/geo.js'
+import { sanitizeUserNote } from '../utils/sanitize.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
@@ -30,6 +32,8 @@ function createInitialState() {
       id: 'r1',
       name: 'Neftçilər prospekti',
       status: 'closed',
+      blocked: true,
+      reason: 'Su basması və asfalt çökməsi',
       accessible: true,
       path: [
         [40.3627, 49.8322],
@@ -44,6 +48,8 @@ function createInitialState() {
       id: 'r2',
       name: 'Heydər Əliyev prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3845, 49.8565],
@@ -58,6 +64,8 @@ function createInitialState() {
       id: 'r3',
       name: 'Tbilisi prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3832, 49.8295],
@@ -72,6 +80,8 @@ function createInitialState() {
       id: 'r4',
       name: 'Ziya Bünyadov prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: false,
       path: [
         [40.4148, 49.8345],
@@ -86,6 +96,8 @@ function createInitialState() {
       id: 'r5',
       name: 'Azadlıq prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3795, 49.8485],
@@ -100,6 +112,8 @@ function createInitialState() {
       id: 'r6',
       name: '28 May küçəsi',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: false,
       path: [
         [40.3772, 49.8445],
@@ -523,7 +537,19 @@ function createInitialState() {
   }
 }
 
+function createInitialFloodState() {
+  return {
+    active: false,
+    suspiciousCount: 0,
+    filteredCount: 0,
+    accepted: 0,
+    duplicates: 0,
+    throttled: 0,
+  }
+}
+
 let state = createInitialState()
+let floodState = createInitialFloodState()
 let providerState = 'up'
 let breakerState = 'closed'
 let fallbackModeState = null
@@ -533,6 +559,8 @@ let autoFeedIndex = 0
 const subscribers = new Set()
 let sosIntervalId = null
 let alertTimeoutId = null
+const mockLoginFailures = new Map()
+const mockLoginLockedUntil = new Map()
 
 const STREAM_SOS_TEMPLATES = [
   {
@@ -582,10 +610,13 @@ const STREAM_SOS_TEMPLATES = [
 ]
 
 function computeStats() {
-  const activeSosItems = state.sos.filter((item) => item.status !== 'resolved')
+  const activeSosItems = state.sos.filter((item) => item.status !== 'resolved' && !item.suspicious)
   const activeSos = activeSosItems.length
   const prioritySos = activeSosItems.filter(
     (item) => item.profile === 'special_needs' || item.priorityRank === 1
+  ).length
+  const suspiciousInFeed = state.sos.filter(
+    (item) => item.suspicious === true || item.isSuspicious === true || item.status === 'suspicious'
   ).length
   const pendingAlerts = state.alerts.filter((item) => item.status === 'pending').length
   const openOrActiveShelters = state.shelters.filter((item) => item.status !== 'closed')
@@ -598,6 +629,7 @@ function computeStats() {
   return {
     activeSos,
     prioritySos,
+    suspiciousSos: Math.max(floodState.suspiciousCount, suspiciousInFeed),
     pendingAlerts,
     shelters: state.shelters.length,
     fullShelters,
@@ -816,33 +848,74 @@ export function subscribeMockEvents(callback) {
   }
 }
 
+const MOCK_DEMO_ACCOUNTS = {
+  dispatcher: { password: 'dispatcher123', role: 'dispatcher', token: 'mock-jwt-dispatcher-2026' },
+  admin: { password: 'admin123', role: 'admin', token: 'mock-jwt-admin-2026' },
+  observer: { password: 'observer123', role: 'observer', token: 'mock-jwt-observer-2026' },
+  viewer: { password: 'viewer123', role: 'viewer', token: 'mock-jwt-viewer-2026' },
+}
+
 export async function mockLogin(username, password) {
   await new Promise((r) => setTimeout(r, 180))
-  if (username === 'dispatcher' && password === 'dispatcher123') {
+  const key = String(username || '').toLowerCase()
+  const now = Date.now()
+  const lockedUntil = mockLoginLockedUntil.get(key)
+  if (lockedUntil && lockedUntil > now) {
+    const retryAfter = Math.max(1, Math.ceil((lockedUntil - now) / 1000))
+    const err = new Error('Too many failed logins, try again later')
+    err.status = 429
+    err.code = 'LOGIN_LOCKED'
+    err.retryAfter = retryAfter
+    throw err
+  }
+  if (lockedUntil && lockedUntil <= now) {
+    mockLoginLockedUntil.delete(key)
+    mockLoginFailures.delete(key)
+  }
+
+  const account = MOCK_DEMO_ACCOUNTS[username]
+  if (account && password === account.password) {
+    mockLoginFailures.delete(key)
+    mockLoginLockedUntil.delete(key)
     return {
-      token: 'mock-jwt-dispatcher-2026',
-      role: 'dispatcher',
-      username: 'dispatcher',
+      token: account.token,
+      role: account.role,
+      username,
+      permissions: getRolePermissions(account.role),
       expiresIn: 3600,
     }
   }
-  if (username === 'admin' && password === 'admin123') {
-    return {
-      token: 'mock-jwt-admin-2026',
-      role: 'admin',
-      username: 'admin',
-      expiresIn: 3600,
-    }
+
+  const windowStart = now - 60000
+  const recent = (mockLoginFailures.get(key) || []).filter((ts) => ts > windowStart)
+  recent.push(now)
+  mockLoginFailures.set(key, recent)
+  if (recent.length >= 5) {
+    mockLoginLockedUntil.set(key, now + 60000)
   }
+
   const err = new Error('Invalid credentials')
   err.status = 401
   err.code = 'INVALID_CREDENTIALS'
   throw err
 }
 
+export async function mockGetMe(session) {
+  const role = session?.role || 'dispatcher'
+  return {
+    username: session?.username || role,
+    role,
+    permissions:
+      Array.isArray(session?.permissions) && session.permissions.length > 0
+        ? session.permissions
+        : getRolePermissions(role),
+  }
+}
+
 export async function mockGetDashboard() {
   return clone({
     stats: computeStats(),
+    flood: floodState,
     zones: state.zones,
     sos: sortSosItems(state.sos),
     shelters: state.shelters,
@@ -852,11 +925,95 @@ export async function mockGetDashboard() {
   })
 }
 
+export const mockGetSnapshot = mockGetDashboard
+
+function buildStreetWaypoints(fromLat, fromLng, toLat, toLng) {
+  const midLat1 = Number((fromLat + (toLat - fromLat) * 0.34).toFixed(5))
+  const midLng1 = Number((fromLng + (toLng - fromLng) * 0.18).toFixed(5))
+  const midLat2 = Number((fromLat + (toLat - fromLat) * 0.68).toFixed(5))
+  const midLng2 = Number((fromLng + (toLng - fromLng) * 0.82).toFixed(5))
+  return [
+    [Number(fromLat.toFixed(5)), Number(fromLng.toFixed(5))],
+    [midLat1, midLng1],
+    [midLat2, midLng2],
+    [Number(toLat.toFixed(5)), Number(toLng.toFixed(5))],
+  ]
+}
+
+function buildMockRoutePayload({ fromLat, fromLng, shelterId = null, profile = 'standard', reason = null } = {}) {
+  const originLat = Number.isFinite(Number(fromLat)) ? Number(fromLat) : state.sos[0]?.lat ?? 40.3982
+  const originLng = Number.isFinite(Number(fromLng)) ? Number(fromLng) : state.sos[0]?.lng ?? 49.8522
+
+  const special = profile === 'special_needs'
+  const candidatePool = state.shelters.filter(
+    (s) => s.status !== 'closed' && s.status !== 'full' && (!special || s.accessible)
+  )
+  const sortedPool = (candidatePool.length > 0 ? candidatePool : state.shelters)
+    .slice()
+    .sort((a, b) => {
+      const dA = calculateDistanceMeters(originLat, originLng, a.lat, a.lng) ?? Infinity
+      const dB = calculateDistanceMeters(originLat, originLng, b.lat, b.lng) ?? Infinity
+      return dA - dB
+    })
+
+  const requested = shelterId ? state.shelters.find((s) => s.id === shelterId) : null
+  const shelter =
+    requested && requested.status !== 'closed' && requested.status !== 'full'
+      ? requested
+      : sortedPool[0] || state.shelters[0]
+
+  const directDist = Math.round(calculateDistanceMeters(originLat, originLng, shelter.lat, shelter.lng) || 0)
+  const geometryApprox = providerState !== 'up' || breakerState === 'open'
+  const geometry = geometryApprox
+    ? [
+        [Number(originLat.toFixed(5)), Number(originLng.toFixed(5))],
+        [Number(shelter.lat.toFixed(5)), Number(shelter.lng.toFixed(5))],
+      ]
+    : buildStreetWaypoints(originLat, originLng, shelter.lat, shelter.lng)
+
+  const distanceMeters = geometryApprox
+    ? Math.max(100, directDist)
+    : Math.max(100, Math.round(calculatePathLengthMeters(geometry) || directDist * 1.18))
+  const durationSec = Math.max(60, Math.round(distanceMeters / 1.25))
+
+  const alternatives = sortedPool.slice(1, 3).map((alt) => ({
+    shelter: clone(alt),
+    distanceMeters: Math.round(calculateDistanceMeters(originLat, originLng, alt.lat, alt.lng) || 0),
+  }))
+
+  return {
+    shelter: clone(shelter),
+    from: { lat: originLat, lng: originLng },
+    to: { lat: shelter.lat, lng: shelter.lng },
+    route: {
+      distanceMeters,
+      durationSec,
+      path: geometry,
+      geometry,
+      geometryApprox,
+    },
+    geometry,
+    geometryApprox,
+    alternatives,
+    rerouted: Boolean(reason),
+    reason: reason || null,
+    source: geometryApprox ? 'fallback' : 'provider',
+    offline: geometryApprox,
+    fallbackMode: geometryApprox ? fallbackModeState || 'straight_line' : null,
+    notice: geometryApprox ? { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null } : null,
+  }
+}
+
+export async function mockGetRoute(params = {}) {
+  return clone(buildMockRoutePayload(params))
+}
+
 export async function mockGetRoads() {
   return clone({ items: state.roads })
 }
 
 function buildMockProviderHealth() {
+  const flood = clone(floodState)
   const isHealthy = providerState === 'up' && breakerState === 'closed'
   if (isHealthy) {
     return {
@@ -868,6 +1025,7 @@ function buildMockProviderHealth() {
       offline: false,
       fallbackMode: null,
       notice: null,
+      flood,
     }
   }
   if (providerState === 'slow') {
@@ -880,6 +1038,7 @@ function buildMockProviderHealth() {
       offline: false,
       fallbackMode: fallbackModeState || 'cache',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+      flood,
     }
   }
   if (providerState === 'http503') {
@@ -892,6 +1051,7 @@ function buildMockProviderHealth() {
       offline: true,
       fallbackMode: fallbackModeState || 'static_matrix',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+      flood,
     }
   }
   return {
@@ -903,6 +1063,7 @@ function buildMockProviderHealth() {
     offline: true,
     fallbackMode: fallbackModeState || 'straight_line',
     notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+    flood,
   }
 }
 
@@ -933,7 +1094,11 @@ export async function mockSimSetProvider(nextState) {
   }
   const health = buildMockProviderHealth()
   emitEvent('provider.updated', health)
-  return { ok: true, ...health }
+  const routePayload = buildMockRoutePayload({
+    reason: nextState === 'up' ? 'PROVIDER_RESTORED' : 'PROVIDER_FALLBACK',
+  })
+  emitEvent('reroute', routePayload)
+  return { ok: true, ...health, route: routePayload.route }
 }
 
 export async function mockApproveAlert(alertId) {
@@ -968,8 +1133,8 @@ export async function mockApproveAlert(alertId) {
   alert.status = 'approved'
   crew.status = 'dispatched'
   crew.assignedAlertId = alert.id
-  crew.lat = Number((alert.lat + 0.0012).toFixed(5))
-  crew.lng = Number((alert.lng - 0.0012).toFixed(5))
+  crew.lat = Number(alert.lat)
+  crew.lng = Number(alert.lng)
   alert.proposal = {
     ...alert.proposal,
     crewId: crew.id,
@@ -1019,14 +1184,22 @@ export async function mockDismissAlert(alertId) {
   return clone({ alert, stats: computeStats() })
 }
 
-export async function mockSimCloseRoad(roadId) {
+export async function mockSimCloseRoad(roadId, reason = 'Fövqəladə təhlükəsizlik blokadası') {
   const road = state.roads.find((r) => r.id === roadId)
   if (!road) {
     throw Object.assign(new Error('Road not found'), { status: 404, code: 'ROAD_NOT_FOUND' })
   }
   road.status = 'closed'
+  road.blocked = true
+  road.reason = sanitizeUserNote(reason || 'Fövqəladə təhlükəsizlik blokadası', 160)
   emitEvent('road.updated', road)
-  return clone(road)
+  const routePayload = buildMockRoutePayload({
+    fromLat: road.path?.[0]?.[0],
+    fromLng: road.path?.[0]?.[1],
+    reason: 'ROAD_CLOSED',
+  })
+  emitEvent('reroute', routePayload)
+  return clone({ ...road, reroute: routePayload })
 }
 
 export async function mockSimOpenRoad(roadId) {
@@ -1035,6 +1208,8 @@ export async function mockSimOpenRoad(roadId) {
     throw Object.assign(new Error('Road not found'), { status: 404, code: 'ROAD_NOT_FOUND' })
   }
   road.status = 'open'
+  road.blocked = false
+  road.reason = null
   emitEvent('road.updated', road)
   return clone(road)
 }
@@ -1051,11 +1226,16 @@ export async function mockSimSetShelterOccupancy(shelterId, percent) {
   shelter.status = deriveShelterStatus(clamped, 'open')
   emitEvent('shelter.updated', shelter)
   triggerOverloadAlertIfNeeded(shelter)
+  if (clamped >= 90) {
+    const routePayload = buildMockRoutePayload({ reason: 'SHELTER_NEARLY_FULL' })
+    emitEvent('reroute', routePayload)
+  }
   return clone(shelter)
 }
 
-export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire' }) {
+export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire', note = '' }) {
   const zone = findNearestZone(lat, lng)
+  const cleanNote = sanitizeUserNote(note, 200)
   const created = []
   for (let i = 0; i < count; i += 1) {
     const item = {
@@ -1069,7 +1249,7 @@ export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire' }) {
       lng: Number((lng + (Math.random() - 0.5) * 0.0025).toFixed(5)),
       zoneId: zone.id,
       zoneName: zone.name,
-      note: `Simulyasiya kütləvi siqnalı #${i + 1} (${zone.name})`,
+      note: cleanNote || `Simulyasiya kütləvi siqnalı #${i + 1} (${zone.name})`,
       status: 'active',
       createdAt: new Date().toISOString(),
     }
@@ -1120,6 +1300,119 @@ export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire' }) {
   return clone({ created, alert: clusterAlert })
 }
 
+const FLOOD_HAZARDS = ['fire', 'collapse', 'flood', 'medical']
+
+function createFloodSosEntry(zone, type, suspicious, index) {
+  const lat = Number((zone.lat + (Math.random() - 0.5) * 0.012).toFixed(5))
+  const lng = Number((zone.lng + (Math.random() - 0.5) * 0.014).toFixed(5))
+  return {
+    id: `sos-${sosSeq++}`,
+    citizenId: suspicious ? `cit-spam-${Math.floor(index / 6) + 1}` : `cit-flood-${sosSeq}`,
+    type,
+    profile: 'standard',
+    priority: 'normal',
+    priorityRank: 2,
+    lat,
+    lng,
+    zoneId: zone.id,
+    zoneName: zone.name,
+    note: suspicious
+      ? `Avtomatik filtr: şübhəli flood siqnalı #${index + 1}`
+      : `Kütləvi SOS axını #${index + 1} (${zone.name})`,
+    status: 'active',
+    suspicious,
+    floodGenerated: true,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+export async function mockSimFlood({ count = 600 } = {}) {
+  const total = Math.max(10, Math.min(2000, Number(count) || 600))
+  const accepted = Math.round(total * 0.35)
+  const duplicates = Math.round(total * 0.25)
+  const throttled = Math.round(total * 0.18)
+  const suspicious = Math.max(1, total - accepted - duplicates - throttled)
+  const filteredDelta = duplicates + throttled + suspicious
+
+  floodState = {
+    active: true,
+    suspiciousCount: floodState.suspiciousCount + suspicious,
+    filteredCount: floodState.filteredCount + filteredDelta,
+    accepted: floodState.accepted + accepted,
+    duplicates: floodState.duplicates + duplicates,
+    throttled: floodState.throttled + throttled,
+  }
+
+  const validSampleCount = Math.min(accepted, 220)
+  const suspiciousSampleCount = Math.min(suspicious, 40)
+  const generated = []
+
+  for (let i = 0; i < validSampleCount; i += 1) {
+    const zone = state.zones[i % state.zones.length]
+    const type = FLOOD_HAZARDS[i % FLOOD_HAZARDS.length]
+    generated.push(createFloodSosEntry(zone, type, false, i))
+  }
+  for (let j = 0; j < suspiciousSampleCount; j += 1) {
+    const zone = state.zones[(j + 2) % state.zones.length]
+    const type = FLOOD_HAZARDS[(j + 1) % FLOOD_HAZARDS.length]
+    generated.push(createFloodSosEntry(zone, type, true, j))
+  }
+
+  state.sos = [...generated, ...state.sos].slice(0, 600)
+
+  generated.forEach((item) => emitEvent('sos.created', item))
+  state.zones.forEach((z) => {
+    const updated = recalculateZone(z.id)
+    if (updated) emitEvent('zone.updated', updated)
+  })
+  emitEvent('flood.updated', floodState)
+
+  return clone({
+    ok: true,
+    count: total,
+    accepted,
+    duplicates,
+    throttled,
+    suspicious,
+    filteredCount: floodState.filteredCount,
+    suspiciousCount: floodState.suspiciousCount,
+    flood: floodState,
+    stats: computeStats(),
+  })
+}
+
+export async function mockClearSuspiciousSos() {
+  const cleared = Math.max(
+    floodState.suspiciousCount,
+    state.sos.filter(
+      (item) => item.suspicious === true || item.isSuspicious === true || item.status === 'suspicious'
+    ).length
+  )
+
+  state.sos = state.sos.filter(
+    (item) =>
+      item.suspicious !== true &&
+      item.isSuspicious !== true &&
+      item.status !== 'suspicious' &&
+      item.floodGenerated !== true
+  )
+  floodState = createInitialFloodState()
+
+  state.zones.forEach((z) => {
+    const updated = recalculateZone(z.id)
+    if (updated) emitEvent('zone.updated', updated)
+  })
+  emitEvent('flood.updated', floodState)
+  emitEvent('sos.suspicious_cleared', { cleared, flood: clone(floodState) })
+
+  return clone({
+    ok: true,
+    cleared,
+    flood: floodState,
+    stats: computeStats(),
+  })
+}
+
 export async function mockSimReset() {
   state.sos.forEach((s) => {
     if (s.status !== 'resolved') {
@@ -1133,14 +1426,18 @@ export async function mockSimReset() {
   })
 
   state = createInitialState()
+  floodState = createInitialFloodState()
   providerState = 'up'
   breakerState = 'closed'
   fallbackModeState = null
+  mockLoginFailures.clear()
+  mockLoginLockedUntil.clear()
   sosSeq = 107
   alertSeq = 2
   autoFeedIndex = 0
   stopMockStreams()
   emitEvent('provider.updated', buildMockProviderHealth())
+  emitEvent('flood.updated', floodState)
   if (subscribers.size > 0) {
     startMockStreams()
   }

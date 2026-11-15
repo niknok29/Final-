@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { USE_MOCK } from '../api/client.js'
-import { can } from '../auth/permissions.js'
+import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 
 const LANGUAGES = ['az', 'en', 'ru']
@@ -22,7 +22,7 @@ export function Header() {
     handleLogout,
   } = useDashboard()
 
-  const canSimulate = can(user?.role, 'simulate')
+  const hasSimulateAccess = canSimulate(user)
   const roleLabel = t(`header.roles.${user?.role}`, { defaultValue: user?.role || '' })
 
   const isBreakerOpen = routingBreaker === 'open'
@@ -121,7 +121,7 @@ export function Header() {
           )}
         </button>
 
-        {canSimulate && (
+        {hasSimulateAccess && (
           <button
             type="button"
             className={`sim-toggle-btn ${simDrawerOpen ? 'sim-toggle-btn-open' : ''}`}

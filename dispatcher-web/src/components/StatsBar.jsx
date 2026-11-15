@@ -1,14 +1,16 @@
+import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
 import { formatNumber } from '../utils/time.js'
 
-export function StatsBar() {
+export const StatsBar = memo(function StatsBar() {
   const { t, i18n } = useTranslation()
-  const { dashboard } = useDashboard()
+  const { dashboard, flood } = useDashboard()
   const stats = dashboard.stats
   const lang = i18n.language
 
   const priorityCount = stats.prioritySos ?? 0
+  const suspiciousCount = Math.max(flood?.suspiciousCount ?? 0, stats.suspiciousSos ?? 0)
 
   return (
     <section className="stats-bar" aria-label="Dashboard statistics">
@@ -23,6 +25,11 @@ export function StatsBar() {
           {t('stats.prioritySos')}
         </span>
         <strong className="stat-value">{formatNumber(priorityCount, lang)}</strong>
+      </div>
+
+      <div className={`stat-card ${suspiciousCount > 0 ? 'stat-card-suspicious' : ''}`}>
+        <span className="stat-label">{t('stats.suspiciousSos')}</span>
+        <strong className="stat-value">{formatNumber(suspiciousCount, lang)}</strong>
       </div>
 
       <div className={`stat-card ${stats.pendingAlerts > 0 ? 'stat-card-alert' : ''}`}>
@@ -47,4 +54,4 @@ export function StatsBar() {
       </div>
     </section>
   )
-}
+})

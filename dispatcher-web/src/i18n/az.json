@@ -17,7 +17,12 @@
     "demoTitle": "Demo hesablar (doldurmaq üçün klikləyin):",
     "demoDispatcher": "Dispetçer: dispatcher / dispatcher123",
     "demoAdmin": "Admin: admin / admin123",
+    "demoObserver": "Müşahidəçi (RBAC oxuma): observer / observer123",
     "error401": "İstifadəçi adı və ya şifrə yanlışdır.",
+    "errorLocked": "Çox sayda uğursuz giriş cəhdi (429 LOGIN_LOCKED). {{seconds}} saniyə sonra yenidən cəhd edin.",
+    "errorRateLimit": "Çox sayda sorğu (429). Yenidən cəhd etməzdən əvvəl {{seconds}} saniyə gözləyin.",
+    "errorPayloadTooLarge": "Sorğu həcmi 32 KB limitini aşır (413 PAYLOAD_TOO_LARGE).",
+    "lockedButton": "Bloklanıb ({{seconds}}s)",
     "errorGeneric": "Giriş zamanı xəta baş verdi. Yenidən cəhd edin."
   },
   "header": {
@@ -45,15 +50,25 @@
     "logout": "Çıxış",
     "roles": {
       "dispatcher": "Dispetçer",
-      "admin": "Admin"
+      "admin": "Admin",
+      "observer": "Müşahidəçi",
+      "viewer": "İzləyici"
     }
   },
   "notices": {
     "OFFLINE_BACKUP_ROUTE_MODE": "Oflayn / Ehtiyat marşrut rejimində işləyir"
   },
+  "flood": {
+    "tag": "SOS FLOOD",
+    "bannerMessage": "{{count}} saxta/şübhəli sorğu filtrlənib",
+    "suspiciousChip": "şübhəli: {{count}}",
+    "clearBtn": "Təmizlə",
+    "clearingBtn": "Təmizlənir..."
+  },
   "stats": {
     "activeSos": "Aktiv SOS",
     "prioritySos": "Prioritet SOS",
+    "suspiciousSos": "Şübhəli SOS",
     "pendingAlerts": "Gözləyən Qırmızı Xəbərdarlıq",
     "shelters": "Sığınacaqlar (Dolu / Cəmi)",
     "crews": "Briqadalar (Hazır / Cəmi)"
@@ -77,11 +92,13 @@
     "dismiss": "Ləğv et",
     "processing": "İcra olunur...",
     "noPermission": "Bu əməliyyat üçün icazəniz yoxdur.",
+    "noPermissionTooltip": "İcazə yoxdur (yalnız oxuma rejimi)",
     "approvedBadge": "Təsdiqləndi"
   },
   "sos": {
     "title": "Canlı SOS Axını",
     "count": "{{count}} siqnal",
+    "cappedNotice": "Performans üçün ilk {{shown}} / {{total}} siqnal göstərilir",
     "empty": "Seçilmiş filtr üzrə aktiv SOS siqnalı yoxdur.",
     "noNote": "Əlavə qeyd yoxdur.",
     "flyHint": "Xəritədə baxmaq üçün klikləyin",
@@ -104,7 +121,8 @@
     "status": {
       "active": "Aktiv",
       "dispatched": "Yönləndirilib",
-      "resolved": "Həll edilib"
+      "resolved": "Həll edilib",
+      "suspicious": "Şübhəli"
     }
   },
   "time": {
@@ -122,6 +140,9 @@
       "critical": "Kritik",
       "prioritySos": "Prioritet SOS",
       "closedRoad": "Bağlı yol",
+      "roadblock": "Yol blokadası",
+      "routeExact": "Dəqiq marşrut",
+      "routeApprox": "Təqribi marşrut",
       "shelter": "Sığınacaq",
       "crew": "Briqada"
     },
@@ -135,6 +156,8 @@
       "assignedAlert": "Təyinat",
       "roadClosed": "Bağlı yol",
       "roadOpen": "Açıq yol",
+      "blockReason": "Bloklanma səbəbi",
+      "roadBlockedReasonDefault": "Hərəkət müvəqqəti məhdudlaşdırılıb",
       "accessible": "Əlçatanlıq",
       "accessibleTransport": "Əlçatan nəqliyyat",
       "reportedAt": "Vaxt",
@@ -144,6 +167,12 @@
       "nearestShelter": "Ən yaxın sığınacaq",
       "distanceToTarget": "Hadisəyə məsafə",
       "roadLength": "Uzunluq",
+      "routeTitle": "Təxliyə marşrutu",
+      "routeExact": "Dəqiq küçə həndəsəsi (canlı)",
+      "routeApprox": "Təqribi marşrut (ehtiyat/oflayn rejim)",
+      "routeDistance": "Marşrut məsafəsi",
+      "routeEta": "Təxmini vaxt",
+      "minutesShort": "dəq",
       "yes": "Var (♿)",
       "no": "Yoxdur"
     }
@@ -191,8 +220,11 @@
     "setOccupancy": "Doluluğu təyin et",
     "burstSection": "SOS Kütləvi Siqnal (4 SOS)",
     "hazardType": "Hadisə növü",
+    "notePlaceholder": "SOS qeydi (maks. 200 simvol)",
     "targetCoords": "Hədəf koordinat: {{lat}}, {{lng}}",
     "sendBurst": "4 SOS Göndər",
+    "floodBtn": "SOS Flood (600)",
+    "floodRunning": "Göndərilir (600)...",
     "providerSection": "Marşrutlaşdırma Provayderi",
     "providerUp": "Up",
     "providerSlow": "Slow (>5s)",
@@ -209,11 +241,16 @@
     "noCrewAvailable": "Hazırda uyğun briqada (və ya əlçatan nəqliyyat) mövcud deyil.",
     "rateLimit": "Çox sayda sorğu (429). Zəhmət olmasa bir neçə saniyə gözləyin.",
     "rateLimitRetry": "Sorğu limiti aşılıb (429). {{seconds}} saniyə sonra yenidən cəhd edin.",
+    "loginLocked": "5 uğursuz cəhddən sonra giriş müvəqqəti bloklandı (LOGIN_LOCKED). {{seconds}} saniyə gözləyin.",
+    "payloadTooLarge": "Sorğu rədd edildi: həcm 32 KB limitini aşır (413 PAYLOAD_TOO_LARGE).",
     "wsAuthExpired": "Sessiya müddəti bitdi və ya icazə rədd edildi (WS 1008). Yenidən daxil olun.",
     "roadClosed": "Yol bağlandı: {{road}}",
     "roadOpened": "Yol açıldı: {{road}}",
     "shelterUpdated": "{{shelter}} doluluğu {{percent}}% olaraq yeniləndi.",
     "sosBurstSent": "Seçilmiş nöqtədə 4 yeni SOS siqnalı yaradıldı.",
+    "sosFloodResult": "SOS Flood (600): {{accepted}} qəbul, {{duplicates}} dublikat, {{throttled}} limit, {{suspicious}} şübhəli",
+    "suspiciousCleared": "Şübhəli SOS sorğuları təmizləndi ({{count}}).",
+    "forbidden": "İcazə yoxdur",
     "providerUpdated": "Marşrutlaşdırma provayderi dəyişdirildi: {{state}}",
     "simReset": "Simulyasiya ilkin vəziyyətə qaytarıldı.",
     "reconnected": "Canlı əlaqə bərpa edildi və məlumatlar yeniləndi.",

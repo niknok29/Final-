@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { can } from '../auth/permissions.js'
+import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
-import { sanitizeUserNote } from '../utils/sanitize.js'
+import { sanitizeSosNoteInput, sanitizeUserNote } from '../utils/sanitize.js'
 
 const HAZARD_TYPES = ['fire', 'collapse', 'flood', 'medical']
 
@@ -20,6 +20,7 @@ export function SimulationDrawer() {
     handleSimOpenRoad,
     handleSimShelterOccupancy,
     handleSimSosBurst,
+    handleSimFlood,
     handleSimSetProvider,
     handleSimReset,
   } = useDashboard()
@@ -28,8 +29,10 @@ export function SimulationDrawer() {
   const [selectedShelterId, setSelectedShelterId] = useState('')
   const [occupancyPercent, setOccupancyPercent] = useState(96)
   const [burstType, setBurstType] = useState('fire')
+  const [burstNote, setBurstNote] = useState('')
+  const [floodBusy, setFloodBusy] = useState(false)
 
-  if (!can(user?.role, 'simulate') || !simDrawerOpen) {
+  if (!canSimulate(user) || !simDrawerOpen) {
     return null
   }
 
@@ -155,11 +158,24 @@ export function SimulationDrawer() {
                   lat: simTargetCoords.lat,
                   lng: simTargetCoords.lng,
                   type: burstType,
+                  note: sanitizeSosNoteInput(burstNote, 200).trim(),
                 })
               }
             >
               {t('sim.sendBurst')}
             </button>
+          </div>
+          <div className="sim-note-row">
+            <input
+              type="text"
+              className="sim-note-input"
+              maxLength={200}
+              value={burstNote}
+              onChange={(e) => setBurstNote(sanitizeSosNoteInput(e.target.value, 200))}
+              placeholder={t('sim.notePlaceholder')}
+              aria-label={t('sim.notePlaceholder')}
+            />
+            <span className="sim-char-counter">{burstNote.length} / 200</span>
           </div>
           <span className="sim-coords-hint">
             {t('sim.targetCoords', {
@@ -167,6 +183,24 @@ export function SimulationDrawer() {
               lng: simTargetCoords.lng.toFixed(4),
             })}
           </span>
+          <div className="sim-flood-row">
+            <button
+              type="button"
+              className="sim-btn sim-btn-flood"
+              disabled={floodBusy}
+              onClick={async () => {
+                if (floodBusy) return
+                setFloodBusy(true)
+                try {
+                  await handleSimFlood(600)
+                } finally {
+                  setFloodBusy(false)
+                }
+              }}
+            >
+              {floodBusy ? t('sim.floodRunning') : t('sim.floodBtn')}
+            </button>
+          </div>
         </div>
 
         <div className="sim-control-card">
