@@ -14,7 +14,7 @@ def token(headers):
 def test_outage_fallback_breaker_and_recovery(client, headers):
     assert client.get("/api/route", params=Q).json()["source"] == "provider"
     assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed",
-                                                "degraded": False}
+                                                "degraded": False, "state": "up"}
     assert client.post("/api/sim/provider", json={"state": "down"}).status_code == 401  # needs a token
 
     with client.websocket_connect("/ws/dispatcher?token=" + token(headers)) as ws:
@@ -33,7 +33,7 @@ def test_outage_fallback_breaker_and_recovery(client, headers):
         client.post("/api/sim/provider", headers=headers, json={"state": "up"})  # recovery closes the breaker
         assert ws.receive_json()["data"] == {"state": "up", "breaker": "closed"}
     assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed",
-                                                "degraded": False}
+                                                "degraded": False, "state": "up"}
     assert client.get("/api/route", params=Q).json()["source"] == "provider"
 
 

@@ -5,18 +5,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, dispatch, realtime, sim
 from .api import router
 from .db import init_db
+from .security import SecurityMiddleware
 from .util import ApiError
 
 log = logging.getLogger("crisis")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    auth.warn_secret()
     init_db()
     realtime.hub.loop = asyncio.get_running_loop()
     yield
@@ -36,11 +39,15 @@ async def _catch_all(request: Request, call_next):
         return _internal(request)
 
 
+# add_middleware: the LAST one added is the OUTERMOST. Request path: gzip -> CORS -> security -> catch-all -> app,
+# so rate-limit / body-limit rejections still carry CORS headers and everything is gzip-compressed.
+app.add_middleware(SecurityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 for r in (router, auth.router, dispatch.router, sim.router, realtime.router):
     app.include_router(r)
 

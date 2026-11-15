@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, Index
 from sqlmodel import Field, SQLModel
 
 
@@ -65,6 +65,8 @@ class Crew(SQLModel, table=True):
 
 
 class Sos(SQLModel, table=True):
+    __table_args__ = (Index("ix_sos_status_created_at", "status", "created_at"),)  # dashboard / list queries
+
     id: str = Field(primary_key=True)
     citizen_id: str = Field(index=True)
     type: str
@@ -72,17 +74,17 @@ class Sos(SQLModel, table=True):
     lng: float
     note: str = ""
     zone_id: str
-    status: str = "active"  # active | resolved
+    status: str = Field("active", index=True)  # active | resolved
     profile: str = "standard"  # standard | special_needs
     priority: str = "normal"  # critical | normal
     priority_rank: int = 2  # 1 = critical, 2 = normal
-    created_at: datetime = Field(default_factory=now)
+    created_at: datetime = Field(default_factory=now, index=True)
 
 
 class Alert(SQLModel, table=True):
     id: str = Field(primary_key=True)
     kind: str  # SOS_CLUSTER | SHELTER_OVERLOAD | PRIORITY_SOS
-    status: str = "pending"  # pending | approved | dismissed
+    status: str = Field("pending", index=True)  # pending | approved | dismissed
     zone_id: str
     lat: float
     lng: float

@@ -283,3 +283,41 @@ Backup order: **(1) cache** — the last successful route per (shelter, origin o
 - Any unexpected server exception returns HTTP 500 with the standard body `{"error":{"code":"INTERNAL_ERROR","message":"Internal server error"}}` (no stack trace or internals; CORS headers are still present; the details are logged server-side).
 - `GET /api/route` never returns 5xx because of the routing provider.
 - WebSocket handlers and broadcasts swallow and log exceptions; one broken client never affects others.
+
+---
+## L. Security & load hardening (additive, v1.5)
+No endpoint, field or event from A–K is removed or renamed. New behaviour only; clients should handle the new error responses below.
+
+### L.1 Response headers (every HTTP response, including errors)
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. Responses under `/api/auth/*` also carry `Cache-Control: no-store`. Responses of at least 500 bytes are gzip-compressed when the client sends `Accept-Encoding: gzip` (browsers do this automatically).
+
+### L.2 New error responses (standard error body)
+| status | code | when | extra |
+|---|---|---|---|
+| 429 | `RATE_LIMITED` | more than `RATE_LIMIT_GLOBAL` (default **300**) requests per minute from one IP, on any endpoint | `Retry-After: <seconds>` |
+| 429 | `RATE_LIMITED` | existing limits unchanged: `POST /api/sos` 10/min per IP, `POST /api/auth/login` 10/min per IP | `Retry-After` |
+| 429 | `LOGIN_LOCKED` | **5 failed logins** for the same IP + username lock that pair out for **60 s**; the correct password is also refused while locked; a successful login resets the counter | `Retry-After: <seconds left>` |
+| 413 | `PAYLOAD_TOO_LARGE` | request body larger than **32 KB** (declared `Content-Length` or actual chunked size) | — |
+
+`Retry-After` is exposed to browsers via CORS. `422 VALIDATION_ERROR` is also returned for a login `username` longer than 64 or `password` longer than 256 characters. WebSocket connections are not counted by the global limit.
+
+### L.3 SOS `note` sanitization
+`POST /api/sos` still accepts `note` up to 200 characters, but the stored/broadcast value is sanitized: HTML tags (also unterminated ones) are removed, control and invisible format characters (incl. bidi overrides) are dropped, stray `<` `>` are removed, whitespace is collapsed and trimmed. So `"<b>Help</b>\u0000 me"` is stored as `"Help me"`. UIs should still render notes as plain text.
+
+### L.4 `GET /api/health`
+Adds `"state": "up"|"down"|"slow"|"http503"` — the exact provider simulation state (what `POST /api/sim/provider` last set). Full shape: `{"status":"ok","routingProvider":"up"|"down","breaker":"closed"|"open","degraded":false,"state":"up"}`. Dispatcher UIs can use it to restore the exact provider indicator after a page reload (previously `slow` and `http503` both showed as `down`).
+
+### L.5 Caching
+`GET /api/shelters`, `/api/roads` and `/api/districts` are cached in server memory for **2 s** (per `lang`) and invalidated immediately when any shelter, road or district row changes (sim endpoints, alert approve, reset, anything), so clients never see data older than the last change. Other endpoints are not cached.
+
+### L.6 Server configuration (env, no API impact)
+`JWT_SECRET` (set a random value ≥ 32 chars; the server logs a loud warning at startup while the built-in default is used), `RATE_LIMIT_GLOBAL` (300), `RATE_LIMIT_SOS` (10), `RATE_LIMIT_LOGIN` (10), `LOGIN_MAX_FAILURES` (5), `LOGIN_LOCK_SECONDS` (60), `MAX_BODY_BYTES` (32768), `CACHE_TTL` (2), `AUDIT_LOG` (default `backend/audit.log`). Rate limits and lockout are per client IP as seen by the server (behind a reverse proxy, forward the real client IP). Tokens and passwords are never logged. Role checks go only through the central `PERMISSIONS` table in `auth.py`.
+
+### L.7 Audit log
+`backend/audit.log` (git-ignored), one JSON object per line: `{"time","event","user","role","ip", ...}`. Events: `login.success`, `login.failure`, `login.locked`, `sos.create` (user = citizenId, role `citizen`, plus `sosId`), `alert.approve`, `alert.dismiss` (plus `alertId`), `sim.call` (plus `method`, `path`). For a failed login `user` is the attempted username and `role` is absent.
+
+### L.8 Database indexes
+`sos(status)`, `sos(created_at)`, `sos(citizen_id)`, `sos(status, created_at)`, `alert(status)`; created automatically at startup, also on an existing database.
+
+### L.9 Load test
+`python backend/tools/loadtest.py [--base-url http://127.0.0.1:8000] [--requests 200] [--no-sos]` fires N concurrent requests (60 % `GET /api/shelters`, 10 % `POST /api/sos`, 30 % `GET /api/route`) and prints p50/p95/max per endpoint and the status-code counts. `POST /api/sos` writes real rows (use `--no-sos` or the sim Reset afterwards); 429 counts as the limiter working, not as an error. Use `127.0.0.1`, not `localhost`, on Windows (the IPv6 fallback adds ~200 ms per new connection).
