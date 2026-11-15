@@ -1,5 +1,5 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   MapContainer,
   TileLayer,
@@ -12,448 +12,633 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-
-import { api, getNearestShelters, getRoute, sendSOS, markSafe } from "./api/client";
+import { USE_MOCK, sendSOS, markSafe } from "./api/client";
+import useCitizen from "./hooks/useCitizen";
 
 const BAKU = [40.4093, 49.8671];
-
-const markerIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
-
+const EMPTY_PATH = [];
+const icons = Object.fromEntries(
+  ["open", "filling", "near_full", "full", "closed", "position"].map(
+    (status) => [
+      status,
+      L.divIcon({
+        className: `shelter-marker marker-${status}`,
+        html: status === "position" ? "●" : "◆",
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      }),
+    ],
+  ),
+);
 function MapClick({ onSelect }) {
-  useMapEvents({
-    click(e) {
-      onSelect([e.latlng.lat, e.latlng.lng]);
-    },
-  });
+  useMapEvents({ click: (e) => onSelect([e.latlng.lat, e.latlng.lng]) });
   return null;
 }
-
-function MapNavigation({ position, route }) {
+function MapNavigation({ position, path }) {
   const map = useMap();
-
+  const { t } = useTranslation();
   useEffect(() => {
-    if (route?.length > 1) {
-      map.fitBounds(route, { padding: [40, 40] });
-    } else {
-      map.setView(position, 13);
+    if (path.length > 1)
+      map.fitBounds(path, { padding: [30, 30], maxZoom: 16 });
+    else map.setView(position, 13);
+  }, [map, position, path]);
+  useEffect(() => {
+    const root = map.getContainer();
+    root.setAttribute("aria-label", t("liveMap"));
+    const zoomIn = root.querySelector(".leaflet-control-zoom-in");
+    const zoomOut = root.querySelector(".leaflet-control-zoom-out");
+    if (zoomIn) {
+      zoomIn.title = t("zoomIn");
+      zoomIn.setAttribute("aria-label", t("zoomIn"));
     }
-  }, [map, position, route]);
-
+    if (zoomOut) {
+      zoomOut.title = t("zoomOut");
+      zoomOut.setAttribute("aria-label", t("zoomOut"));
+    }
+  }, [map, t]);
   return null;
 }
-
-const hazards = [
-  { type: "fire", name: "🔥 Yanğın" },
-  { type: "collapse", name: "🏚️ Dağıntı" },
-  { type: "flood", name: "🌊 Su basması" },
-  { type: "medical", name: "🚑 Tibbi yardım" },
-];
-
+function SosDialog({
+  t,
+  hazard,
+  setHazard,
+  note,
+  setNote,
+  busy,
+  remaining,
+  onSubmit,
+  onClose,
+  profile,
+}) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    dialog.current.showModal();
+    return () => previous?.focus();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="modal"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onClose();
+      }}
+      aria-labelledby="sos-title"
+    >
+      <button
+        className="close-modal"
+        aria-label={t("close")}
+        onClick={onClose}
+        disabled={busy}
+      >
+        ×
+      </button>
+      <h2 id="sos-title">{t("sosTitle")}</h2>
+      <p>{t("sosDescription")}</p>
+      {profile === "special_needs" && (
+        <p className="notice warning">{t("prioritySOS")}</p>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <fieldset className="hazard-grid" disabled={busy}>
+          <legend>{t("hazardType")}</legend>
+          {["fire", "collapse", "flood", "medical"].map((type) => (
+            <label key={type} className={hazard === type ? "active" : ""}>
+              <input
+                type="radio"
+                name="hazard"
+                value={type}
+                checked={hazard === type}
+                onChange={() => setHazard(type)}
+              />
+              {t(type)}
+            </label>
+          ))}
+        </fieldset>
+        <label htmlFor="sos-note">{t("notePlaceholder")}</label>
+        <textarea
+          id="sos-note"
+          maxLength={200}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          disabled={busy}
+        />
+        <small>{note.length}/200</small>
+        <button className="sos-main" disabled={busy || remaining > 0}>
+          {busy
+            ? t("sending")
+            : remaining > 0
+              ? t("waitSeconds", { count: remaining })
+              : t("confirmSOS")}
+        </button>
+      </form>
+    </dialog>
+  );
+}
+function readProfile() {
+  try {
+    return localStorage.getItem("profile") === "special_needs"
+      ? "special_needs"
+      : "standard";
+  } catch {
+    return "standard";
+  }
+}
+function errorText(error, fallback, t) {
+  if (error?.status === 429)
+    return t("rateLimitedSeconds", { count: error.retryAfter });
+  return t(error?.code || fallback, { defaultValue: t(fallback) });
+}
 export default function App() {
+  const { t, i18n } = useTranslation();
+  const lang = i18n.resolvedLanguage;
   const [position, setPosition] = useState(BAKU);
-  const [districts, setDistricts] = useState([]);
-  const [shelters, setShelters] = useState([]);
-  const [nearest, setNearest] = useState([]);
-  const [roads, setRoads] = useState([]);
+  const [district, setDistrict] = useState("");
   const [selected, setSelected] = useState(null);
-  const [routeData, setRouteData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [profile, setProfile] = useState(readProfile);
+  const data = useCitizen({ position, selected, profile, lang });
   const [sosOpen, setSosOpen] = useState(false);
   const [hazard, setHazard] = useState("fire");
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
-  const [cooldown, setCooldown] = useState(false);
-  const [activeSOS, setActiveSOS] = useState(false);
-  const [safe, setSafe] = useState(false);
-  const [message, setMessage] = useState("");
-
+  const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [sosStatus, setSosStatus] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [until, setUntil] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const pending = useRef(false);
+  const mounted = useRef(false);
+  const remaining = Math.max(0, Math.ceil((until - now) / 1000));
   useEffect(() => {
-    Promise.all([
-      api.getDistricts(),
-      api.getShelters(),
-      api.getRoads(),
-    ])
-      .then(([d, s, r]) => {
-        setDistricts(d.items);
-        setShelters(s.items);
-        setRoads(r.items);
-      })
-      .catch(() => setError("Məlumatları yükləmək mümkün olmadı."));
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadRoute() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const result = await getNearestShelters(
-          position[0],
-          position[1],
-          3
-        );
-
-        if (cancelled) return;
-
-        setNearest(result.items);
-
-        const target =
-          result.items.find((s) => s.id === selected) ||
-          result.items[0];
-
-        if (!target) {
-          setRouteData(null);
-          return;
-        }
-
-        const route = await getRoute(
-          position[0],
-          position[1],
-          target.id
-        );
-
-        if (!cancelled) {
-          setSelected(target.id);
-          setRouteData(route);
-        }
-      } catch {
-        if (!cancelled) {
-          setError("Marşrut yüklənmədi. Yenidən cəhd edin.");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    loadRoute();
+    mounted.current = true;
     return () => {
-      cancelled = true;
+      mounted.current = false;
     };
-  }, [position, selected]);
-
-  function detectLocation() {
-    if (!navigator.geolocation) {
-      setMessage("Cihazda geolokasiya dəstəklənmir.");
-      return;
+  }, []);
+  useEffect(() => {
+    if (!until) return;
+    const timer = setInterval(() => {
+      const timestamp = Date.now();
+      setNow(timestamp);
+      if (timestamp >= until) setUntil(0);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [until]);
+  function changePosition(value, id = "") {
+    setPosition(value);
+    setDistrict(id);
+    setSelected(null);
+  }
+  function changeProfile(checked) {
+    const value = checked ? "special_needs" : "standard";
+    setProfile(value);
+    setSelected(null);
+    try {
+      localStorage.setItem("profile", value);
+    } catch {
+      /* Optional persistence */
     }
-
+  }
+  function detectLocation() {
+    if (!navigator.geolocation)
+      return setMessage({ key: "locationUnsupported" });
+    setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (location) => {
-        setPosition([
-          location.coords.latitude,
-          location.coords.longitude,
-        ]);
+        if (mounted.current) {
+          changePosition([location.coords.latitude, location.coords.longitude]);
+          setLocating(false);
+        }
       },
-      () => setMessage("Rayon seçə və ya xəritəyə toxuna bilərsiniz."),
-      { enableHighAccuracy: true, timeout: 10000 }
+      () => {
+        if (mounted.current) {
+          setMessage({ key: "locationDenied" });
+          setLocating(false);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     );
   }
-
   async function submitSOS() {
-    if (sending || cooldown) return;
-
+    if (pending.current || Date.now() < until) return;
+    pending.current = true;
     setSending(true);
-
     try {
-      await sendSOS(hazard, position[0], position[1], note);
-      setActiveSOS(true);
-      setSafe(false);
+      await sendSOS(hazard, position[0], position[1], note, profile);
+      setSosStatus(profile);
       setSosOpen(false);
-      setMessage("SOS uğurla göndərildi!");
-      setCooldown(true);
-      setTimeout(() => setCooldown(false), 5000);
-    } catch (err) {
-      setMessage(
-        err.message === "RATE_LIMITED"
-          ? "Çox sayda sorğu göndərilib. Bir az sonra təkrar edin."
-          : "SOS göndərilmədi. Yenidən cəhd edin."
-      );
+      setNote("");
+      setMessage({ key: "sosSuccess" });
+      setNow(Date.now());
+      setUntil(Date.now() + 5000);
+    } catch (error) {
+      if (error.status === 429) {
+        setNow(Date.now());
+        setUntil(Date.now() + error.retryAfter * 1000);
+      }
+      setMessage({ error, fallback: "sosError" });
     } finally {
+      pending.current = false;
       setSending(false);
     }
   }
-
   async function submitSafe() {
+    if (pending.current || (Date.now() < until && sosStatus === "safe")) return;
+    pending.current = true;
+    setSaving(true);
     try {
       await markSafe(position[0], position[1]);
-      setSafe(true);
-      setActiveSOS(false);
-      setMessage("Təhlükəsiz olduğunuz bildirildi.");
-    } catch {
-      setMessage("Əməliyyat alınmadı. Yenidən cəhd edin.");
+      setSosStatus("safe");
+      setMessage({ key: "safeSuccess" });
+    } catch (error) {
+      setMessage({ error, fallback: "safeError" });
+    } finally {
+      pending.current = false;
+      setSaving(false);
     }
   }
-
-  const path = routeData?.route?.path || [];
+  const routeData = data.routeData;
+  const path = routeData?.route?.path || EMPTY_PATH;
   const destination = routeData?.shelter;
-  const occupancy = destination?.occupancyPercent ?? 0;
-
+  const blocked = (shelter) =>
+    ["full", "closed"].includes(shelter.status) ||
+    (profile === "special_needs" && !shelter.accessible);
+  const shelterSummary = (shelter) => (
+    <>
+      <span>
+        {t("occupancy")}: {shelter.occupancyPercent}% · {shelter.occupancy}/
+        {shelter.capacity}
+      </span>
+      <span className={`badge status-${shelter.status}`}>
+        {t(shelter.status)}
+      </span>
+      <span>
+        {t(shelter.accessible ? "accessibleShelter" : "notAccessible")}
+      </span>
+    </>
+  );
   return (
     <div className="citizen-app">
+      <div className="mobile-actions" aria-label={t("emergencyHelp")}>
+        <button className="sos-main" disabled={sending || saving || remaining > 0} onClick={() => setSosOpen(true)}>
+          {remaining ? t("waitSeconds", { count: remaining }) : t("sendSOS")}
+        </button>
+        <button className="safe-main" disabled={sending || saving} onClick={submitSafe}>
+          {t(saving ? "sending" : "safe")}
+        </button>
+      </div>
       <header className="topbar">
         <div className="brand">
-          <span className="brand-icon">✚</span>
+          <span className="brand-icon" aria-hidden="true">
+            ✚
+          </span>
           <div>
-            <strong>SafeBaku</strong>
-            <small>Fövqəladə təhlükəsizlik platforması</small>
+            <strong>{t("appName")}</strong>
+            <small>{t("subtitle")}</small>
           </div>
         </div>
-        <span className="demo-tag">● DEMO</span>
+        <label className="language-picker">
+          <span className="sr-only">{t("language")}</span>
+          <select
+            aria-label={t("language")}
+            value={lang}
+            onChange={(e) => i18n.changeLanguage(e.target.value)}
+          >
+            <option value="az">AZ</option>
+            <option value="en">EN</option>
+            <option value="ru">RU</option>
+          </select>
+        </label>
       </header>
-
       <main className="main-content">
         <div className="heading">
-          <div>
-            <p className="eyebrow">VƏTƏNDAŞ PANELİ</p>
-            <h1>Təhlükəsiz yolunuzu tapın</h1>
-            <p>Yaxınlıqdakı toplanış nöqtələrini və təhlükəsiz marşrutu görün.</p>
-          </div>
+          <p className="eyebrow">{t("citizenPanel")}</p>
+          <h1>{t("mainTitle")}</h1>
+          <p>{t("description")}</p>
         </div>
-
+        <div className="profile-bar">
+          <label>
+            <input
+              type="checkbox"
+              checked={profile === "special_needs"}
+              onChange={(e) => changeProfile(e.target.checked)}
+            />{" "}
+            {t("specialNeeds")}
+          </label>
+          <span className="badge">
+            {t(profile === "special_needs" ? "specialMode" : "standardMode")}
+          </span>
+          {profile === "special_needs" && (
+            <span className="badge">♿ {t("accessibleRouting")}</span>
+          )}
+        </div>
+        {data.notice && (
+          <div
+            key={data.notice.id}
+            className="notice warning reroute-notice"
+            role="status"
+          >
+            <strong>{t("rerouted")}</strong> —{" "}
+            {t(data.notice.reason || "ROUTE_CHANGED")}
+          </div>
+        )}
+        {data.dataError && (
+          <div className="notice error" role="alert">
+            {errorText(data.dataError, "dataError", t)}{" "}
+            <button onClick={data.retry}>{t("retry")}</button>
+          </div>
+        )}
         <div className="content-grid">
-          <section className="map-card">
+          <section className="map-card" aria-label={t("liveMap")}>
             <div className="card-heading">
-              <strong>🗺️ Canlı təhlükəsizlik xəritəsi</strong>
-              <span className="status-live">● Xəritə aktivdir</span>
+              <strong>{t("liveMap")}</strong>
+              <span
+                className={`badge connection-${data.connection}`}
+                role="status"
+              >
+                {t(data.connection)}
+                {USE_MOCK && ` · ${t("mockMode")}`}
+              </span>
             </div>
-
             <div className="location-controls">
-              <button className="location-btn" onClick={detectLocation}>
-                ◎ Mənim yerim
+              <button
+                className="location-btn"
+                disabled={locating}
+                onClick={detectLocation}
+              >
+                {t(locating ? "locating" : "myLocation")}
               </button>
               <select
-                defaultValue=""
+                aria-label={t("selectDistrict")}
+                value={district}
                 onChange={(e) => {
-                  const district = districts.find(
-                    (d) => d.id === e.target.value
-                  );
-                  if (district) {
-                    setPosition([district.lat, district.lng]);
-                  }
+                  const d = data.districts.find((x) => x.id === e.target.value);
+                  if (d) changePosition([d.lat, d.lng], d.id);
                 }}
               >
-                <option value="" disabled>Rayon seçin</option>
-                {districts.map((district) => (
-                  <option key={district.id} value={district.id}>
-                    {district.name}
+                <option value="" disabled>
+                  {t("selectDistrict")}
+                </option>
+                {data.districts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>
             </div>
-
+            <p className="location-caption">
+              {t(position === BAKU ? "defaultLocation" : "selectedLocation")}{" "}
+              {position.map((n) => n.toFixed(5)).join(", ")}
+            </p>
             <div className="map-wrapper">
               <MapContainer center={BAKU} zoom={12} className="map">
                 <TileLayer
-                  attribution='&copy; OpenStreetMap contributors'
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-
-                <MapClick onSelect={setPosition} />
-                <MapNavigation position={position} route={path} />
-
-                <Marker position={position} icon={markerIcon}>
-                  <Popup>Sizin mövqeyiniz</Popup>
+                <MapClick onSelect={changePosition} />
+                <MapNavigation position={position} path={path} />
+                <Marker
+                  key={`position-${lang}`}
+                  position={position}
+                  icon={icons.position}
+                  title={t("yourLocation")}
+                >
+                  <Popup>{t("yourLocation")}</Popup>
                 </Marker>
-
-                {shelters.map((shelter) => (
+                {data.shelters.map((s) => (
                   <Marker
-                    key={shelter.id}
-                    position={[shelter.lat, shelter.lng]}
-                    icon={markerIcon}
+                    key={`${s.id}-${lang}-${s.status}-${s.name}`}
+                    position={[s.lat, s.lng]}
+                    icon={icons[s.status] || icons.open}
+                    title={`${s.name}: ${t(s.status)}`}
                   >
                     <Popup>
-                      <strong>{shelter.name}</strong>
-                      <p>Doluluq: {shelter.occupancyPercent}%</p>
-                      <button onClick={() => setSelected(shelter.id)}>
-                        Marşrut seç
+                      <strong>{s.name}</strong>
+                      <div className="shelter-details">{shelterSummary(s)}</div>
+                      <button
+                        disabled={blocked(s)}
+                        onClick={() => setSelected(s.id)}
+                      >
+                        {t("selectRoute")}
                       </button>
                     </Popup>
                   </Marker>
                 ))}
-
-                {roads.filter((r) => r.status === "closed").map((road) => (
+                {data.roads
+                  .filter(
+                    (r) =>
+                      r.status === "closed" ||
+                      (profile === "special_needs" && !r.accessible),
+                  )
+                  .map((r) => (
+                    <Polyline
+                      key={r.id}
+                      positions={r.path}
+                      pathOptions={{
+                        color: r.status === "closed" ? "#dc2626" : "#a16207",
+                        weight: 5,
+                        dashArray: "10,10",
+                      }}
+                    >
+                      <Popup>
+                        {r.name} ·{" "}
+                        {t(r.status === "closed" ? "closed" : "notAccessible")}
+                      </Popup>
+                    </Polyline>
+                  ))}
+                {routeData?.alternatives?.map((a, i) => (
                   <Polyline
-                    key={road.id}
-                    positions={road.path}
-                    pathOptions={{
-                      color: "#dc2626",
-                      weight: 5,
-                      dashArray: "10, 10",
-                    }}
-                  />
+                    key={i}
+                    positions={a.path}
+                    pathOptions={{ color: "#64748b", weight: 3 }}
+                  >
+                    <Popup>{t("alternative", { count: i + 1 })}</Popup>
+                  </Polyline>
                 ))}
-
-                {routeData?.alternatives?.map((alternative, index) => (
-                  <Polyline
-                    key={index}
-                    positions={alternative.path}
-                    pathOptions={{ color: "#94a3b8", weight: 3 }}
-                  />
-                ))}
-
                 {path.length > 0 && (
                   <Polyline
                     positions={path}
-                    pathOptions={{ color: "#2563eb", weight: 6 }}
+                    pathOptions={{
+                      color: "#2563eb",
+                      weight: 6,
+                      dashArray:
+                        routeData.source === "fallback" ? "8,8" : undefined,
+                    }}
                   />
                 )}
               </MapContainer>
             </div>
-
-            <p className="map-hint">📍 Mövqeyinizi dəyişmək üçün xəritəyə toxunun.</p>
+            <p className="map-hint">{t("mapHint")}</p>
+            <div className="map-legend">
+              {["open", "filling", "near_full", "full", "closed"].map(
+                (status) => (
+                  <span key={status}>
+                    <i className={`legend-dot marker-${status}`} />
+                    {t(status)}
+                  </span>
+                ),
+              )}
+            </div>
           </section>
-
           <aside className="side-panel">
-            <section className="panel-card">
-              <div className="card-heading">
-                <strong>📍 Ən yaxın təhlükəsiz nöqtələr</strong>
-              </div>
-
-              {loading && <p>Marşrut hesablanır...</p>}
-              {error && (
-                <div className="notice error">
-                  {error}
-                  <button onClick={() => setSelected(null)}>Yenilə</button>
+            <section className="panel-card" aria-busy={data.loading}>
+              <h2>{t("nearestShelters")}</h2>
+              {data.loading && <p role="status">{t("routeLoading")}</p>}
+              {data.routeError && (
+                <div className="notice error" role="alert">
+                  {errorText(data.routeError, "routeError", t)}{" "}
+                  <button onClick={data.retry}>{t("retry")}</button>
                 </div>
               )}
-
-              {!loading && nearest.length === 0 && (
-                <p>Toplanış nöqtəsi tapılmadı.</p>
+              {!data.loading && !data.nearest.length && (
+                <p>{t("noShelters")}</p>
               )}
-
-              {nearest.map((shelter) => (
+              {data.nearest.map((s) => (
                 <button
-                  key={shelter.id}
-                  className={`shelter-item ${selected === shelter.id ? "selected" : ""}`}
-                  onClick={() => setSelected(shelter.id)}
+                  key={s.id}
+                  className={`shelter-item ${destination?.id === s.id ? "selected" : ""}`}
+                  disabled={blocked(s)}
+                  onClick={() => setSelected(s.id)}
                 >
-                  <span className="shelter-title">
-                    {shelter.kind === "park" ? "🌳" : "🏟️"} {shelter.name}
-                  </span>
+                  <span className="shelter-title">{s.name}</span>
                   <span className="shelter-distance">
-                    {(shelter.distanceMeters / 1000).toFixed(2)} km
+                    {(s.distanceMeters / 1000).toFixed(2)} {t("km")}
                   </span>
-                  <div className="progress-track">
-                    <div
-                      className={`progress-fill ${shelter.occupancyPercent >= 90 ? "high" : shelter.occupancyPercent >= 75 ? "medium" : "low"}`}
-                      style={{ width: `${Math.min(shelter.occupancyPercent, 100)}%` }}
+                  <span className="progress-track">
+                    <span
+                      className={`progress-fill ${s.occupancyPercent >= 100 ? "full" : s.occupancyPercent >= 90 ? "high" : s.occupancyPercent >= 75 ? "medium" : "low"}`}
+                      style={{ width: `${Math.min(s.occupancyPercent, 100)}%` }}
                     />
-                  </div>
-                  <small>Doluluq: {shelter.occupancyPercent}%</small>
+                  </span>
+                  <span className="shelter-details">{shelterSummary(s)}</span>
                 </button>
               ))}
             </section>
-
             <section className="panel-card route-card">
-              <div className="card-heading">
-                <strong>🧭 Tövsiyə edilən marşrut</strong>
-              </div>
-
+              <h2>{t("recommendedRoute")}</h2>
               {destination ? (
                 <>
                   <h3>{destination.name}</h3>
                   <div className="route-stats">
                     <div>
-                      <strong>{(routeData.route.distanceMeters / 1000).toFixed(1)} km</strong>
-                      <small>Məsafə</small>
+                      <strong>
+                        {(routeData.route.distanceMeters / 1000).toFixed(1)}{" "}
+                        {t("km")}
+                      </strong>
+                      <small>{t("distance")}</small>
                     </div>
                     <div>
-                      <strong>{Math.ceil(routeData.route.durationSec / 60)} dəq</strong>
-                      <small>Təxmini vaxt</small>
+                      <strong>
+                        {Math.ceil(routeData.route.durationSec / 60)}{" "}
+                        {t("minutes")}
+                      </strong>
+                      <small>{t("estimatedTime")}</small>
                     </div>
                     <div>
-                      <strong>{occupancy}%</strong>
-                      <small>Doluluq</small>
+                      <strong>{destination.occupancyPercent}%</strong>
+                      <small>{t("occupancy")}</small>
                     </div>
                   </div>
-                  {routeData.rerouted && (
-                    <div className="notice warning">
-                      ⚠️ Marşrut dəyişdirildi: {routeData.reason}
-                    </div>
-                  )}
+                  <p>
+                    <span className="badge">
+                      {t(
+                        routeData.accessible
+                          ? "accessibleRoute"
+                          : "notAccessible",
+                      )}
+                    </span>{" "}
+                    · {t(routeData.transport)}
+                  </p>
+                  <ul>
+                    {routeData.accessibilityNotes?.map((key) => (
+                      <li key={key}>{t(key)}</li>
+                    ))}
+                  </ul>
                   {routeData.source === "fallback" && (
-                    <div className="notice warning">
-                      Təxmini marşrut (xarici xidmət əlçatmazdır)
+                    <div className="notice warning" role="status">
+                      {t("fallbackRoute")}
+                      <p>{t("fallbackWarning")}</p>
+                      <button onClick={data.retry}>{t("refreshRoute")}</button>
                     </div>
                   )}
+                  {routeData.alternatives?.map((a, i) => (
+                    <p key={i}>
+                      {t("alternative", { count: i + 1 })}:{" "}
+                      {(a.distanceMeters / 1000).toFixed(1)} {t("km")} ·{" "}
+                      {Math.ceil(a.durationSec / 60)} {t("minutes")}
+                    </p>
+                  ))}
                 </>
               ) : (
-                <p>Marşrut məlumatı gözlənilir.</p>
+                <p>{t("routeWaiting")}</p>
               )}
             </section>
-
             <section className="panel-card emergency-card">
-              <h3>Fövqəladə yardım</h3>
-              <p>Təhlükədəsinizsə, SOS siqnalı göndərin.</p>
-
-              {activeSOS && <div className="notice warning">● Aktiv SOS</div>}
-              {safe && <div className="notice success">✓ Təhlükəsizsiniz</div>}
-
+              <h2>{t("emergencyHelp")}</h2>
+              <p>{t("emergencyDescription")}</p>
+              {sosStatus && (
+                <div
+                  role="status"
+                  className={`notice ${sosStatus === "safe" ? "success" : "warning"}`}
+                >
+                  {t(sosStatus === "safe" ? "safeStatus" : "activeSOS")}
+                  {sosStatus === "special_needs" && (
+                    <strong className="priority-badge">
+                      {t("prioritySOS")}
+                    </strong>
+                  )}
+                </div>
+              )}
               <button
                 className="sos-main"
+                disabled={sending || saving || remaining > 0}
                 onClick={() => setSosOpen(true)}
               >
-                🆘 {safe ? "Yenidən SOS" : "SOS GÖNDƏR"}
+                {remaining
+                  ? t("waitSeconds", { count: remaining })
+                  : t(sosStatus ? "sosAgain" : "sendSOS")}
               </button>
-
-              <button className="safe-main" onClick={submitSafe}>
-                ✓ Təhlükəsizəm
+              <button
+                className="safe-main"
+                disabled={sending || saving}
+                onClick={submitSafe}
+              >
+                {t(saving ? "sending" : "safe")}
               </button>
             </section>
           </aside>
         </div>
       </main>
-
       {message && (
-        <div className="toast" role="status" onClick={() => setMessage("")}>
-          {message} ×
+        <div className="toast" role={message.error ? "alert" : "status"}>
+          {message.key
+            ? t(message.key)
+            : errorText(message.error, message.fallback, t)}
+          <button aria-label={t("close")} onClick={() => setMessage(null)}>
+            ×
+          </button>
         </div>
       )}
-
       {sosOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <button className="close-modal" onClick={() => setSosOpen(false)}>✕</button>
-            <h2>🆘 SOS göndər</h2>
-            <p>Fövqəladə vəziyyətin növünü seçin.</p>
-
-            <div className="hazard-grid">
-              {hazards.map((item) => (
-                <button
-                  key={item.type}
-                  className={hazard === item.type ? "active" : ""}
-                  onClick={() => setHazard(item.type)}
-                >
-                  {item.name}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              placeholder="Əlavə məlumat (istəyə bağlı)"
-              maxLength={200}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <small>{note.length}/200</small>
-
-            <button
-              className="sos-main"
-              disabled={sending || cooldown}
-              onClick={submitSOS}
-            >
-              {sending ? "Göndərilir..." : "SOS təsdiqlə və göndər"}
-            </button>
-          </div>
-        </div>
+        <SosDialog
+          t={t}
+          hazard={hazard}
+          setHazard={setHazard}
+          note={note}
+          setNote={setNote}
+          busy={sending}
+          remaining={remaining}
+          onSubmit={submitSOS}
+          onClose={() => setSosOpen(false)}
+          profile={profile}
+        />
       )}
     </div>
   );

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local backend integration-test environment and artifacts
+.test-venv/
+.test-artifacts/
