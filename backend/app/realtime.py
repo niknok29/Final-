@@ -134,12 +134,19 @@ async def _hold(ws: WebSocket):
         hub.drop(ws)
 
 
+async def _reject(ws: WebSocket):
+    """Accept, then close with 1008 (policy violation). Closing before accept would be an HTTP 403 on the
+    handshake, which browsers report as code 1006 - clients could not tell "bad token" from "network down"."""
+    await ws.accept()
+    await ws.close(code=1008)
+
+
 @router.websocket("/ws/citizen")
 async def ws_citizen(ws: WebSocket, citizenId: str = "", lang: str = "az"):
     try:
         cid = str(UUID(citizenId))
     except ValueError:
-        return await ws.close(code=1008)
+        return await _reject(ws)
     await ws.accept()
     hub.citizens[ws] = (cid, norm_lang(lang))
     await _hold(ws)
@@ -148,10 +155,8 @@ async def ws_citizen(ws: WebSocket, citizenId: str = "", lang: str = "az"):
 @router.websocket("/ws/dispatcher")
 async def ws_dispatcher(ws: WebSocket, token: str = "", lang: str = "az"):
     claims = decode(token)
-    if not claims:
-        return await ws.close(code=1008)
-    if not can(claims.get("role", ""), "dispatch"):
-        return await ws.close(code=1008)
+    if not claims or not can(claims.get("role", ""), "dispatch"):
+        return await _reject(ws)
     await ws.accept()
     hub.dispatchers[ws] = norm_lang(lang)
     await _hold(ws)
