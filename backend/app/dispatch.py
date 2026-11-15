@@ -17,6 +17,19 @@ DASHBOARD_SOS_CAP = 200  # the dashboard carries at most this many active SOS (p
 NORMAL_ACTIVE = (Sos.status == "active", Sos.trust == "normal")
 
 
+PENDING_CAP = 20  # at most this many (newest) pending alerts are returned; stats.totalPending has the real count
+
+
+def _capped_alerts(s: Session, status: str | None, others_limit: int | None) -> list:
+    """Newest PENDING_CAP pending alerts; other statuses (history) are unlimited, or newest `others_limit`."""
+    q = select(Alert).order_by(Alert.created_at.desc())
+    pending = [] if status not in (None, "pending") else s.exec(q.where(Alert.status == "pending").limit(PENDING_CAP)).all()
+    others = [] if status == "pending" else s.exec(
+        (q.where(Alert.status == status) if status else q.where(Alert.status != "pending"))
+        .limit(others_limit) if others_limit else (q.where(Alert.status == status) if status else q.where(Alert.status != "pending"))).all()
+    return sorted(pending + others, key=lambda a: a.created_at, reverse=True)
+
+
 @router.get("/dashboard", dependencies=[Depends(require("view"))])
 async def dashboard(lang: str = Depends(get_lang)):
     def run():
@@ -36,11 +49,13 @@ def _dashboard(s: Session, lang: str) -> dict:
     counts = dict(s.exec(select(Sos.zone_id, func.count()).where(*NORMAL_ACTIVE).group_by(Sos.zone_id)).all())
     shelters = s.exec(select(Shelter)).all()
     crews = s.exec(select(Crew)).all()
-    alerts = s.exec(select(Alert).order_by(Alert.created_at.desc()).limit(50)).all()
+    total_pending = s.exec(select(func.count()).select_from(Alert).where(Alert.status == "pending")).one()
+    alerts = _capped_alerts(s, None, 30)
     return {
         "stats": {
             "activeSos": active_total,
-            "pendingAlerts": sum(a.status == "pending" for a in alerts),
+            "pendingAlerts": total_pending,
+            "totalPending": total_pending,
             "shelters": len(shelters),
             "fullShelters": sum(x.status == "full" for x in shelters),
             "availableCrews": sum(c.status == "available" for c in crews),
@@ -107,5 +122,4 @@ def dismiss_alert(alert_id: str, request: Request, user: dict = Depends(require(
 @router.get("/alerts", dependencies=[Depends(require("view"))])
 def list_alerts(status: Optional[Literal["pending", "approved", "dismissed"]] = None,
                 lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    q = select(Alert).order_by(Alert.created_at.desc())
-    return {"items": [alert_out(a, lang) for a in s.exec(q.where(Alert.status == status) if status else q).all()]}
+    return {"items": [alert_out(a, lang) for a in _capped_alerts(s, status, None)]}
