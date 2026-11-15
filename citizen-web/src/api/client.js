@@ -205,6 +205,9 @@ export async function sendSOS(type, lat, lng, note = "", profile = "standard") {
   )
     throw new ApiError("VALIDATION_ERROR", 422);
   const body = { citizenId: getCitizenId(), type, lat, lng, note, profile };
+  return submitSOSPayload(body);
+}
+export async function submitSOSPayload(body) {
   return USE_MOCK
     ? {
         id: `sos_${Date.now()}`,

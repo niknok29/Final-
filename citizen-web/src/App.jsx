@@ -12,8 +12,9 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
-import { USE_MOCK, sendSOS, markSafe } from "./api/client";
+import { USE_MOCK, markSafe } from "./api/client";
 import useCitizen from "./hooks/useCitizen";
+import useSosQueue from "./hooks/useSosQueue";
 import {
   routeNoticeKey,
   routeWarningKey,
@@ -179,7 +180,10 @@ function readProfile() {
 }
 function errorText(error, fallback, t) {
   if (error?.status === 429)
-    return t("rateLimitedSeconds", { count: error.retryAfter });
+    return t(error.code || "RATE_LIMITED", {
+      count: error.retryAfter,
+      defaultValue: t("rateLimitedSeconds", { count: error.retryAfter }),
+    });
   return t(error?.code || fallback, { defaultValue: t(fallback) });
 }
 export default function App() {
@@ -193,12 +197,17 @@ export default function App() {
   const [sosOpen, setSosOpen] = useState(false);
   const [hazard, setHazard] = useState("fire");
   const [note, setNote] = useState("");
-  const [sending, setSending] = useState(false);
+  const [submitting, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [sosStatus, setSosStatus] = useState(null);
   const [message, setMessage] = useState(null);
-  const [until, setUntil] = useState(0);
+  const sosQueue = useSosQueue((record) => {
+    setSosStatus(record.payload.profile);
+    setMessage({ key: record.duplicate ? "sosDuplicate" : "sosSuccess" });
+  });
+  const until = sosQueue.cooldownUntil;
+  const sending = submitting || sosQueue.sending;
   const [now, setNow] = useState(() => Date.now());
   const pending = useRef(false);
   const mounted = useRef(false);
@@ -214,7 +223,7 @@ export default function App() {
     const timer = setInterval(() => {
       const timestamp = Date.now();
       setNow(timestamp);
-      if (timestamp >= until) setUntil(0);
+      if (timestamp >= until) clearInterval(timer);
     }, 250);
     return () => clearInterval(timer);
   }, [until]);
@@ -258,18 +267,27 @@ export default function App() {
     pending.current = true;
     setSending(true);
     try {
-      await sendSOS(hazard, position[0], position[1], note, profile);
-      setSosStatus(profile);
+      const record = await sosQueue.submit({
+        type: hazard,
+        lat: position[0],
+        lng: position[1],
+        note,
+        profile,
+      });
+      if (!record) {
+        setMessage({ key: "SOS_BUSY" });
+        return;
+      }
       setSosOpen(false);
       setNote("");
-      setMessage({ key: "sosSuccess" });
+      if (record.status !== "sent")
+        setMessage({
+          key: ["failed", "exhausted"].includes(record.status)
+            ? "sosNeedsAttention"
+            : "sosQueued",
+        });
       setNow(Date.now());
-      setUntil(Date.now() + 5000);
     } catch (error) {
-      if (error.status === 429) {
-        setNow(Date.now());
-        setUntil(Date.now() + error.retryAfter * 1000);
-      }
       setMessage({ error, fallback: "sosError" });
     } finally {
       pending.current = false;
@@ -281,7 +299,7 @@ export default function App() {
     pending.current = true;
     setSaving(true);
     try {
-      await markSafe(position[0], position[1]);
+      await sosQueue.markSafe(() => markSafe(position[0], position[1]));
       setSosStatus("safe");
       setMessage({ key: "safeSuccess" });
     } catch (error) {
@@ -668,6 +686,70 @@ export default function App() {
           </aside>
         </div>
       </main>
+      {(sosQueue.storageError ||
+        sosQueue.records.some((r) =>
+          ["pending", "sending", "failed", "exhausted"].includes(r.status),
+        )) && (
+        <section
+          className="queue-panel panel-card"
+          aria-label={t("sosQueueTitle")}
+        >
+          {sosQueue.storageError && (
+            <p role="alert" className="notice error">
+              {t("queueStorageError")}
+            </p>
+          )}
+          {sosQueue.records
+            .filter((r) =>
+              ["pending", "sending", "failed", "exhausted"].includes(r.status),
+            )
+            .map((record) => (
+              <div
+                key={record.id}
+                className={`notice ${["failed", "exhausted"].includes(record.status) ? "error" : "warning"}`}
+                role="status"
+              >
+                <strong>
+                  {t(
+                    record.status === "sending"
+                      ? "sending"
+                      : record.status === "pending"
+                        ? "sosQueued"
+                        : "sosNeedsAttention",
+                  )}
+                </strong>
+                <p>
+                  {t(record.payload.type)} ·{" "}
+                  {t("sosAttempts", { count: record.attempts })}
+                </p>
+                {record.errorCode && (
+                  <p>
+                    {t(record.errorCode, {
+                      count: Math.max(
+                        0,
+                        Math.ceil((record.nextAttemptAt - now) / 1000),
+                      ),
+                      defaultValue: t("sosError"),
+                    })}
+                  </p>
+                )}
+                {record.status === "pending" && (
+                  <p>
+                    {t("sosRetryCountdown", {
+                      count: Math.max(
+                        0,
+                        Math.ceil((record.nextAttemptAt - now) / 1000),
+                      ),
+                    })}
+                  </p>
+                )}
+                {["failed", "exhausted"].includes(record.status) && (
+                  <p>{t("sosManualHelp")}</p>
+                )}
+              </div>
+            ))}
+        </section>
+      )}
       {message && (
         <div className="toast" role={message.error ? "alert" : "status"}>
           {message.key

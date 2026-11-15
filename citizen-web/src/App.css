@@ -723,3 +723,12 @@ h2 {
     bottom: 95px;
   }
 }
+.queue-panel {
+  max-width: 1320px;
+  margin: 0 auto 24px;
+}
+@media (max-width: 850px) {
+  .queue-panel {
+    margin: 0 13px 24px;
+  }
+}

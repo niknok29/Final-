@@ -104,5 +104,17 @@
   "backupMatrixWarning": "Serverin təqdim etdiyi təxmini ehtiyat marşrut istifadə olunur. Hərəkətdən əvvəl ətrafınızı yoxlayın.",
   "shelter": "Sığınacaq",
   "park": "Park",
-  "stadium": "Stadion"
+  "stadium": "Stadion",
+  "RATE_LIMITED": "Çox sayda sorğu. {{count}} saniyə sonra təkrar edin.",
+  "CITIZEN_RATE_LIMITED": "SOS limitinizə çatdınız. {{count}} saniyə gözləyin.",
+  "SOS_FLOOD_THROTTLED": "SOS axını müvəqqəti məhdudlaşdırılıb. {{count}} saniyə gözləyin.",
+  "sosDuplicate": "SOS artıq qəbul edilib",
+  "sosQueued": "SOS təkrar göndərilmək üçün saxlanılıb — çatdırılma təsdiqlənməyib.",
+  "sosQueueTitle": "SOS çatdırılma vəziyyəti",
+  "queueStorageError": "SOS yaddaşı əlçatmazdır və ya zədələnib. Səhifəni açıq saxlayın; gözləyən siqnallar yenidən yükləmədən sonra itə bilər. Təcili xidmətlərlə birbaşa əlaqə saxlayın.",
+  "SOS_BUSY": "Başqa SOS əməliyyatı davam edir. Gözləyin.",
+  "sosNeedsAttention": "SOS üçün əl ilə müdaxilə lazımdır — çatdırılma təsdiqlənməyib.",
+  "sosAttempts": "Göndərmə cəhdləri: {{count}} / 3",
+  "sosRetryCountdown": "Növbəti cəhd {{count}} saniyə sonra (bağlantı olduqda).",
+  "sosManualHelp": "Bu qeyd saxlanılıb. Avtomatik göndərmə dayandırılıb. Təcili xidmətlərlə birbaşa əlaqə saxlayın və ya hazır olduqda yeni SOS göndərin."
 }

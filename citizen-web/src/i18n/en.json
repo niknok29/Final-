@@ -104,5 +104,17 @@
   "backupMatrixWarning": "Using an estimated backup route supplied by the server. Check your surroundings before proceeding.",
   "shelter": "Shelter",
   "park": "Park",
-  "stadium": "Stadium"
+  "stadium": "Stadium",
+  "RATE_LIMITED": "Too many requests. Retry in {{count}} seconds.",
+  "CITIZEN_RATE_LIMITED": "Your SOS limit has been reached. Retry in {{count}} seconds.",
+  "SOS_FLOOD_THROTTLED": "SOS traffic is temporarily throttled. Retry in {{count}} seconds.",
+  "sosDuplicate": "SOS has already been received.",
+  "sosQueued": "SOS saved for retry — delivery not confirmed.",
+  "sosQueueTitle": "SOS delivery status",
+  "queueStorageError": "SOS storage is unavailable or damaged. Keep this page open; pending signals may not survive a reload. Contact emergency services directly.",
+  "SOS_BUSY": "Another SOS operation is in progress. Please wait.",
+  "sosNeedsAttention": "SOS needs manual attention — not confirmed delivered.",
+  "sosAttempts": "Sending attempts: {{count}} / 3",
+  "sosRetryCountdown": "Next retry in {{count}} seconds (when online).",
+  "sosManualHelp": "This record is retained. Automatic sending has stopped. Contact emergency services directly or submit a new SOS when ready."
 }
