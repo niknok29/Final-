@@ -238,3 +238,24 @@ Nothing in sections A–H changes for existing calls; all new fields/params are 
 ### I.5 Other
 - `POST /api/sim/sos-burst` creates `standard` SOS only.
 - A local dev database created before Drop 1 is rebuilt automatically (demo data only) on server start.
+
+---
+## J. Routing provider outage handling (additive, v1.3)
+Nothing in sections A–I changes for existing calls.
+
+### J.1 `POST /api/sim/provider`  (Bearer token, `simulate` permission)
+Body `{"state":"up"|"down"|"slow"}` → `{"ok":true,"state":"down"}` (invalid state → 422).
+- `down`: every provider call fails immediately (outage).
+- `slow`: the provider is slower than the 2 s timeout, so each call waits at most 2 s and then fails (latency/timeout simulation).
+- `up`: normal again; also closes the circuit breaker immediately (otherwise it would stay open for its 30 s cooldown).
+- While the provider fails, `GET /api/route` still answers `200` with `"source":"fallback"` (straight-line estimate, `alternatives: []`). A request waits for a failing provider **at most once and at most 2 s**, regardless of how many candidate shelters it evaluates. After 3 failing requests the circuit breaker opens (30 s) and routes are answered instantly from the fallback; after the cooldown one trial call is allowed.
+- `POST /api/sim/reset` also puts the provider back to `up`.
+
+### J.2 `GET /api/health`
+`{"status":"ok","routingProvider":"up"|"down","breaker":"closed"|"open"}` — `breaker` is new. `routingProvider` is `down` when the provider is forced `down`/`slow` or the breaker is open.
+
+### J.3 WebSocket event `provider.updated` (dispatchers only)
+`{"type":"provider.updated","data":{"state":"up"|"down"|"slow","breaker":"closed"|"open"},"ts":"..."}` — sent when the forced state changes (sim endpoint) and whenever the breaker opens/closes. Citizens do not receive it; they only see `source` on route responses. Show the fallback badge when `source == "fallback"`.
+
+### J.4 Optional real provider (server config, no API change)
+Env `ROUTING_PROVIDER=osrm` uses the public OSRM demo server `router.project-osrm.org` (driving profile, up to 2 route options) with a hard 2 s limit per call; any error, timeout or bad payload goes through the same breaker + fallback logic. Default (`mock`, or unset) keeps the built-in mock provider. The demo server is for light use only. Env `MOCK_ROUTING_DOWN=1` starts the server with the provider forced `down`.

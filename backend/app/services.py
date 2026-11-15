@@ -67,8 +67,10 @@ def build_route(s: Session, lat: float, lng: float, shelter_id: str | None, lang
     viable = [x for x in by_dist if x.status in ("open", "filling")]
     no_route = ApiError(409, "NO_ACCESSIBLE_ROUTE", "No accessible shelter or route is currently reachable")
 
+    ctx: dict = {}  # per-request routing context (stops asking a failing provider again)
+
     def go(x):
-        r, alts, src = routing.plan((lat, lng), (x.lat, x.lng))
+        r, alts, src = routing.plan((lat, lng), (x.lat, x.lng), ctx)
         by_closed = blocked(r["path"], closed)
         by_access = special and blocked(r["path"], inaccessible, (lat, lng))
         return x, r, alts, src, by_closed, by_access

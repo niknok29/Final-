@@ -18,6 +18,7 @@ async def lifespan(_: FastAPI):
     init_db()
     realtime.hub.loop = asyncio.get_running_loop()
     yield
+    realtime.hub.loop = None
 
 
 app = FastAPI(title="Crisis Evac Engine", lifespan=lifespan)
