@@ -60,6 +60,12 @@ ROADS = [
 ]
 
 
+# Accessibility flags (everything not listed is accessible; reserve shelters s9/s12 are accessible)
+NOT_ACCESSIBLE_SHELTERS = {"s5", "s6", "s7", "s10"}
+NOT_ACCESSIBLE_ROADS = {"r4", "r7", "r10"}
+ACCESSIBLE_TRANSPORT_CREWS = {"c2", "c4", "c6"}
+
+
 def seed(s: Session, only_if_empty: bool = False):
     """Insert demo data. With only_if_empty=False, wipes all tables first (used by sim reset)."""
     if only_if_empty and s.exec(select(District)).first():
@@ -70,9 +76,12 @@ def seed(s: Session, only_if_empty: bool = False):
     s.commit()
     s.add_all(District(id=i, name=a, name_en=e, name_ru=r, lat=la, lng=ln) for i, a, e, r, la, ln in DISTRICTS)
     s.add_all(
-        Shelter(id=i, name=a, name_en=e, name_ru=r, kind=k, lat=la, lng=ln, capacity=c, occupancy=o, closed=cl)
+        Shelter(id=i, name=a, name_en=e, name_ru=r, kind=k, lat=la, lng=ln, capacity=c, occupancy=o, closed=cl,
+                accessible=i not in NOT_ACCESSIBLE_SHELTERS)
         for i, a, e, r, k, la, ln, c, o, cl in SHELTERS
     )
-    s.add_all(Crew(id=i, name=n, status=st, lat=la, lng=ln) for i, n, st, la, ln in CREWS)
-    s.add_all(Road(id=i, name=a, name_en=e, name_ru=r, status=st, path=p) for i, a, e, r, st, p in ROADS)
+    s.add_all(Crew(id=i, name=n, status=st, lat=la, lng=ln, accessible_transport=i in ACCESSIBLE_TRANSPORT_CREWS)
+              for i, n, st, la, ln in CREWS)
+    s.add_all(Road(id=i, name=a, name_en=e, name_ru=r, status=st, path=p, accessible=i not in NOT_ACCESSIBLE_ROADS)
+              for i, a, e, r, st, p in ROADS)
     s.commit()

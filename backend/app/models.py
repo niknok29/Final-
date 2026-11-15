@@ -30,6 +30,7 @@ class Shelter(SQLModel, table=True):
     capacity: int
     occupancy: int
     closed: bool = False
+    accessible: bool = True  # ramps / step-free access for special-needs citizens
 
     @property
     def percent(self) -> float:
@@ -49,6 +50,7 @@ class Road(SQLModel, table=True):
     name_en: str
     name_ru: str
     status: str = "open"  # open | closed
+    accessible: bool = True  # passable for wheelchairs / medical transport
     path: list = Field(sa_column=Column(JSON))
 
 
@@ -59,6 +61,7 @@ class Crew(SQLModel, table=True):
     lat: float
     lng: float
     assigned_alert_id: Optional[str] = None
+    accessible_transport: bool = False
 
 
 class Sos(SQLModel, table=True):
@@ -70,12 +73,15 @@ class Sos(SQLModel, table=True):
     note: str = ""
     zone_id: str
     status: str = "active"  # active | resolved
+    profile: str = "standard"  # standard | special_needs
+    priority: str = "normal"  # critical | normal
+    priority_rank: int = 2  # 1 = critical, 2 = normal
     created_at: datetime = Field(default_factory=now)
 
 
 class Alert(SQLModel, table=True):
     id: str = Field(primary_key=True)
-    kind: str  # SOS_CLUSTER | SHELTER_OVERLOAD
+    kind: str  # SOS_CLUSTER | SHELTER_OVERLOAD | PRIORITY_SOS
     status: str = "pending"  # pending | approved | dismissed
     zone_id: str
     lat: float

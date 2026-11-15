@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from . import realtime, services
 from .models import Alert, Crew, Shelter, Sos, now
 from .util import ApiError, haversine
-from .views import ALERT_CODE, alert_out, crew_out, shelter_out
+from .views import ALERT_CODE, PRIORITY_CODE, alert_out, crew_out, shelter_out
 
 WINDOW_MIN = 5        # minutes
 RADIUS_M = 500        # meters around the newest SOS
@@ -23,12 +23,15 @@ def _nearest(items, lat, lng):
     return min(items, key=lambda i: haversine(lat, lng, i.lat, i.lng), default=None)
 
 
-def propose(s: Session, lat: float, lng: float, skip_alert_id: str | None = None) -> dict:
-    """Nearest available crew + nearest closed reserve shelter, preferring ones not already proposed elsewhere."""
+def propose(s: Session, lat: float, lng: float, skip_alert_id: str | None = None, priority: bool = False) -> dict:
+    """Nearest available crew + nearest closed reserve shelter, preferring ones not already proposed elsewhere.
+    `priority`: crew must have accessible transport and no shelter is proposed."""
     taken = [a.proposal or {} for a in s.exec(select(Alert).where(Alert.status == "pending")).all() if a.id != skip_alert_id]
     used_c, used_s = {p.get("crewId") for p in taken}, {p.get("newShelterId") for p in taken}
     crews = s.exec(select(Crew).where(Crew.status == "available")).all()
-    reserves = s.exec(select(Shelter).where(Shelter.closed == True)).all()  # noqa: E712
+    if priority:
+        crews = [c for c in crews if c.accessible_transport]
+    reserves = [] if priority else s.exec(select(Shelter).where(Shelter.closed == True)).all()  # noqa: E712
     crew = _nearest([c for c in crews if c.id not in used_c] or crews, lat, lng)
     shelter = _nearest([x for x in reserves if x.id not in used_s] or reserves, lat, lng)
     return {
@@ -38,9 +41,11 @@ def propose(s: Session, lat: float, lng: float, skip_alert_id: str | None = None
 
 
 def _create(s: Session, kind: str, lat: float, lng: float, details: dict) -> Alert:
+    priority = kind == "PRIORITY_SOS"
     a = Alert(
         id="a" + secrets.token_hex(4), kind=kind, zone_id=services.nearest_district(s, lat, lng).id,
-        lat=lat, lng=lng, code=ALERT_CODE, details=details, proposal=propose(s, lat, lng),
+        lat=lat, lng=lng, code=PRIORITY_CODE if priority else ALERT_CODE, details=details,
+        proposal=propose(s, lat, lng, priority=priority),
     )
     s.add(a)
     s.commit()
@@ -51,7 +56,7 @@ def _create(s: Session, kind: str, lat: float, lng: float, details: dict) -> Ale
 
 def _details(**kw) -> dict:
     return {"sosCount": None, "windowMinutes": WINDOW_MIN, "radiusMeters": RADIUS_M,
-            "shelterId": None, "occupancyPercent": None, **kw}
+            "shelterId": None, "occupancyPercent": None, **kw}  # PRIORITY_SOS adds "sosId"
 
 
 def check_sos(s: Session, x: Sos) -> Alert | None:
@@ -81,12 +86,28 @@ def check_shelter(s: Session, sh: Shelter) -> Alert | None:
     return _create(s, "SHELTER_OVERLOAD", sh.lat, sh.lng, _details(shelterId=sh.id, occupancyPercent=sh.percent))
 
 
-def submit_sos(s: Session, citizen_id: str, type_: str, lat: float, lng: float, note: str = "") -> Sos:
-    x = Sos(id="sos_" + secrets.token_hex(4), citizen_id=citizen_id, type=type_, lat=lat, lng=lng,
-            note=note, zone_id=services.nearest_district(s, lat, lng).id)
+def check_priority(s: Session, x: Sos) -> Alert | None:
+    """Every special_needs SOS raises its own PRIORITY_SOS alert (one per SOS)."""
+    if x.profile != "special_needs":
+        return None
+    pending = s.exec(select(Alert).where(Alert.status == "pending", Alert.kind == "PRIORITY_SOS")).all()
+    if any(a.details.get("sosId") == x.id for a in pending):
+        return None
+    return _create(s, "PRIORITY_SOS", x.lat, x.lng,
+                   _details(sosCount=1, windowMinutes=None, radiusMeters=None, sosId=x.id))
+
+
+def submit_sos(s: Session, citizen_id: str, type_: str, lat: float, lng: float, note: str = "",
+               profile: str | None = None) -> Sos:
+    profile = profile or realtime.hub.profiles.get(citizen_id, "standard")
+    realtime.hub.profiles[citizen_id] = profile
+    priority, rank = services.PRIORITY[profile]
+    x = Sos(id="sos_" + secrets.token_hex(4), citizen_id=citizen_id, type=type_, lat=lat, lng=lng, note=note,
+            zone_id=services.nearest_district(s, lat, lng).id, profile=profile, priority=priority, priority_rank=rank)
     s.add(x)
     s.commit()
     realtime.sos_created(s, x)
+    check_priority(s, x)
     check_sos(s, x)
     return x
 
@@ -102,14 +123,17 @@ def _pending(s: Session, alert_id: str) -> Alert:
 
 def approve(s: Session, alert_id: str, lang: str = "az") -> dict:
     a = _pending(s, alert_id)
+    priority = a.kind == "PRIORITY_SOS"  # priority alerts only dispatch an accessible-transport crew, no shelter
     p = a.proposal or {}
     crew = s.get(Crew, p["crewId"]) if p.get("crewId") else None
-    shelter = s.get(Shelter, p["newShelterId"]) if p.get("newShelterId") else None
-    if not crew or crew.status != "available" or not shelter or not shelter.closed:  # proposal went stale
-        fresh = propose(s, a.lat, a.lng, skip_alert_id=a.id)
-        if not crew or crew.status != "available":
+    shelter = None if priority or not p.get("newShelterId") else s.get(Shelter, p["newShelterId"])
+    stale_crew = not crew or crew.status != "available"
+    stale_shelter = not priority and (not shelter or not shelter.closed)
+    if stale_crew or stale_shelter:  # proposal went stale
+        fresh = propose(s, a.lat, a.lng, skip_alert_id=a.id, priority=priority)
+        if stale_crew:
             crew = s.get(Crew, fresh["crewId"]) if fresh["crewId"] else None
-        if not shelter or not shelter.closed:
+        if stale_shelter:
             shelter = s.get(Shelter, fresh["newShelterId"]) if fresh["newShelterId"] else None
     if not crew:
         raise ApiError(409, "NO_CREW_AVAILABLE", "No available crew to dispatch")

@@ -9,7 +9,7 @@ from . import services
 from .auth import can, decode
 from .db import engine
 from .models import District, now
-from .util import LANGS, iso, norm_lang
+from .util import LANGS, ApiError, iso, norm_lang
 from .views import alert_out, crew_out, road_out, shelter_out, sos_out
 
 router = APIRouter()
@@ -20,7 +20,8 @@ class Hub:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.citizens: dict[WebSocket, tuple[str, str]] = {}  # ws -> (citizenId, lang)
         self.dispatchers: dict[WebSocket, str] = {}  # ws -> lang
-        self.targets: dict[str, tuple[float, float, str]] = {}  # citizenId -> (lat, lng, shelterId)
+        self.targets: dict[str, tuple[float, float, str, str]] = {}  # citizenId -> (lat, lng, shelterId, profile)
+        self.profiles: dict[str, str] = {}  # citizenId -> last known profile (set on route / sos calls)
 
     def drop(self, ws: WebSocket):
         c = self.citizens.pop(ws, None)
@@ -104,14 +105,17 @@ def road_changed(r):
 def reroute_check():
     """Re-evaluate each tracked citizen's route; push `reroute` when it had to change."""
     with Session(engine) as s:
-        for cid, (lat, lng, sid) in list(hub.targets.items()):
-            r = services.build_route(s, lat, lng, sid)
+        for cid, (lat, lng, sid, profile) in list(hub.targets.items()):
+            try:  # special_needs keeps the accessible constraint; no accessible route -> nothing to push
+                r = services.build_route(s, lat, lng, sid, "az", profile)
+            except ApiError:
+                continue
             if not r["rerouted"]:
                 continue
-            hub.targets[cid] = (lat, lng, r["shelter"]["id"])
+            hub.targets[cid] = (lat, lng, r["shelter"]["id"], profile)
             to_citizens(
                 "reroute",
-                by_lang(lambda l: {**services.build_route(s, lat, lng, sid, l), "message": "ROUTE_CHANGED"}),
+                by_lang(lambda l: {**services.build_route(s, lat, lng, sid, l, profile), "message": "ROUTE_CHANGED"}),
                 cid,
             )
 

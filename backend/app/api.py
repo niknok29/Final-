@@ -20,6 +20,7 @@ class SosIn(BaseModel):
     lat: float = Field(ge=-90, le=90)
     lng: float = Field(ge=-180, le=180)
     note: str = Field("", max_length=200)
+    profile: Optional[Literal["standard", "special_needs"]] = None  # omitted -> citizen's last known profile, else standard
 
 
 class SafeIn(BaseModel):
@@ -55,16 +56,21 @@ def roads(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
 
 @router.get("/route")
 def route(fromLat: float, fromLng: float, shelterId: Optional[str] = None, citizenId: Optional[UUID] = None,
+          profile: Optional[Literal["standard", "special_needs"]] = None,
           lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    r = services.build_route(s, fromLat, fromLng, shelterId, lang)
-    if citizenId:  # remember the citizen's target so `reroute` can be pushed over WS later
-        realtime.hub.targets[str(citizenId)] = (fromLat, fromLng, r["shelter"]["id"])
+    cid = str(citizenId) if citizenId else None
+    profile = profile or (realtime.hub.profiles.get(cid) if cid else None) or "standard"
+    if cid:
+        realtime.hub.profiles[cid] = profile
+    r = services.build_route(s, fromLat, fromLng, shelterId, lang, profile)
+    if cid:  # remember the citizen's target so `reroute` can be pushed over WS later
+        realtime.hub.targets[cid] = (fromLat, fromLng, r["shelter"]["id"], profile)
     return r
 
 
 @router.post("/sos", status_code=201, dependencies=[Depends(sos_limiter)])
 def create_sos(body: SosIn, s: Session = Depends(get_session)):
-    x = alerts.submit_sos(s, str(body.citizenId), body.type, body.lat, body.lng, body.note)
+    x = alerts.submit_sos(s, str(body.citizenId), body.type, body.lat, body.lng, body.note, body.profile)
     return {"id": x.id, "status": x.status, "createdAt": iso(x.created_at)}
 
 

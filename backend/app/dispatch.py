@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require("dispatch"))])
 
 @router.get("/dashboard")
 def dashboard(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    sos = s.exec(select(Sos).where(Sos.status == "active").order_by(Sos.created_at.desc())).all()
+    sos = s.exec(select(Sos).where(Sos.status == "active").order_by(Sos.priority_rank, Sos.created_at.desc())).all()
     shelters = s.exec(select(Shelter)).all()
     crews = s.exec(select(Crew)).all()
     alerts = s.exec(select(Alert).order_by(Alert.created_at.desc()).limit(50)).all()
@@ -41,7 +41,7 @@ def dashboard(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
 
 @router.get("/sos")
 def list_sos(status: Optional[Literal["active", "resolved"]] = None, s: Session = Depends(get_session)):
-    q = select(Sos).order_by(Sos.created_at.desc())
+    q = select(Sos).order_by(Sos.priority_rank, Sos.created_at.desc())
     return {"items": [sos_out(x) for x in s.exec(q.where(Sos.status == status) if status else q).all()]}
 
 

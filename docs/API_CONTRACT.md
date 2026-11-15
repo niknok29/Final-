@@ -200,3 +200,41 @@ Everything above still holds. These items were unspecified or are strictly addit
 17. **New error codes:** `ALERT_NOT_FOUND` (404), `ALERT_NOT_PENDING` (409, approve/dismiss on a handled alert), `NO_CREW_AVAILABLE` (409, approve with no available crew), `ROAD_NOT_FOUND` (404). Sim shelter occupancy `percent` must be 0–100.
 18. **`/api/sim/sos-burst`** places the SOS within 200 m of the given point (so they always form a cluster when `count >= 4`). **`/api/sim/reset`** first emits `sos.updated` (resolved) and `alert.updated` (dismissed) for everything that disappears, then restores seed data and re-emits all shelters/roads/crews; dispatchers should still call `GET /api/dashboard` afterwards.
 14. **Seed data:** 12 shelters; `s9` and `s12` are reserve shelters, seeded as `closed` with 0 occupancy (alert approval opens them). `s10` starts at 100 % (`full`).
+
+---
+## I. Drop 1 — Accessibility & priority SOS (additive, v1.2)
+Nothing in sections A–H changes for existing calls; all new fields/params are optional or additive.
+
+### I.1 New fields on existing objects
+| object | new field | notes |
+|---|---|---|
+| Shelter (REST, WS, dashboard, route) | `accessible: bool` | ramps / step-free. Seed: `s5 s6 s7 s10` are `false`; reserve shelters `s9 s12` are `true` |
+| Road (REST, WS) | `accessible: bool` | Seed: `r4 r7 r10` are `false` |
+| Crew (REST, WS, dashboard, approve response) | `accessibleTransport: bool` | Seed: `c2 c4 c6` are `true` |
+| SOS (REST, WS, dashboard, `POST /api/sos` input) | `profile`, `priority`, `priorityRank` | see I.2 |
+
+### I.2 SOS priority
+`POST /api/sos` accepts optional `"profile": "standard" | "special_needs"`.
+- `special_needs` → `priority:"critical"`, `priorityRank:1`; `standard` → `priority:"normal"`, `priorityRank:2`.
+- The response of `POST /api/sos` is unchanged (`id,status,createdAt`). SOS objects everywhere now carry `profile`, `priority`, `priorityRank`.
+- `GET /api/sos` and `dashboard.sos` are sorted by `priorityRank` ascending, then newest first. WS `sos.created` arrives in event order (sort client-side by `priorityRank`).
+- **Profile registry:** the backend remembers the last profile per `citizenId` (set by `POST /api/sos` and by `GET /api/route?citizenId=`). If `profile` is omitted, the remembered profile is used, otherwise `standard`. Send `profile` explicitly to switch back to `standard`. Invalid value → 422.
+
+### I.3 `GET /api/route` — optional `profile=special_needs`
+- Only `accessible` shelters are considered, and roads with `accessible:false` are treated as blocked (in addition to closed roads). Inaccessible roads within 250 m of the start point are ignored, so the citizen's own position never blocks every route.
+- Response (all profiles) adds: `accessible` (bool: shelter is accessible AND the route avoids inaccessible roads), `transport` (`"wheelchair_medical"` for special_needs, else `"walk"`), `accessibilityNotes` (`[]` for standard; for special_needs `["RAMP","STEP_FREE"]` plus `"MEDICAL_TRANSPORT_AVAILABLE"` when an available crew has `accessibleTransport`).
+- **New `reason` values** (reroute reasons, also in WS `reroute`): `SHELTER_NOT_ACCESSIBLE` (requested shelter not accessible, special_needs only) and `ROAD_NOT_ACCESSIBLE` (route crosses an inaccessible road, special_needs only).
+- If no accessible shelter/route is reachable (also when the requested shelter cannot be replaced) → **HTTP 409** `{"error":{"code":"NO_ACCESSIBLE_ROUTE",...}}`.
+- WS `reroute` for a special_needs citizen keeps the same constraint (payload has the same new fields). If no accessible route exists any more, **no** `reroute` is pushed (the next `GET /api/route` returns 409).
+- `GET /api/shelters/nearest` is unchanged (not profile-aware).
+
+### I.4 Alert kind `PRIORITY_SOS`
+- Created immediately for every `special_needs` SOS (one alert per SOS; no duplicate for the same SOS). `kind:"PRIORITY_SOS"`, `level:"red"`, `code:"PRIORITY_SOS_DISPATCH_ACCESSIBLE_TRANSPORT"`, `lat/lng` = SOS position.
+- `message` (by `?lang`): az `Prioritet SOS: Əlçatan nəqliyyatlı briqada göndər` · en `Priority SOS: Send a crew with accessible transport` · ru `Приоритетный SOS: направить бригаду с доступным транспортом`.
+- `details`: `{"sosCount":1,"windowMinutes":null,"radiusMeters":null,"shelterId":null,"occupancyPercent":null,"sosId":"sos_123"}` (`sosId` is new and only present for this kind).
+- `proposal`: `{"crewId","crewName","newShelterId":null,"newShelterName":null}` — nearest available crew with `accessibleTransport` (preferring one not proposed by another pending alert); `crewId`/`crewName` are `null` when none is available.
+- `POST /api/alerts/{id}/approve` dispatches that crew (`status:"dispatched"`) and returns `newShelter: null`; no shelter is opened. With no accessible crew available → 409 `NO_CREW_AVAILABLE`. `dismiss` works as for other kinds. `alert.created` / `alert.updated` are emitted over `WS /ws/dispatcher`. UIs must handle `proposal.newShelterId == null`.
+
+### I.5 Other
+- `POST /api/sim/sos-burst` creates `standard` SOS only.
+- A local dev database created before Drop 1 is rebuilt automatically (demo data only) on server start.
