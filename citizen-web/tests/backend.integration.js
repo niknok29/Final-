@@ -144,20 +144,85 @@ test("real FastAPI citizen integration", async (t) => {
     const fallback = await getRoute(40.41, 49.86, "s2", "en", "standard");
     assert.equal(fallback.source, "fallback");
     assert.deepEqual(fallback.alternatives, []);
-    assert.equal(fallback.route.path.length, 2);
+    assert.equal(fallback.offline, true);
+    assert.ok(
+      ["cache", "static_matrix", "straight_line"].includes(
+        fallback.fallbackMode,
+      ),
+    );
+    assert.equal(fallback.notice.code, "OFFLINE_BACKUP_ROUTE_MODE");
+    assert.ok(fallback.route.path.length >= 2);
     await simulate("provider", { state: "up" });
     assert.equal(
       (await getRoute(40.41, 49.86, "s2", "en", "standard")).source,
       "provider",
     );
   });
-  await t.test("no accessible destination returns the documented 409", async () => {
-    const shelters = (await api.getShelters("en")).items;
-    for (const shelter of shelters.filter(s => s.accessible && s.status !== "closed")) {
-      await simulate(`shelters/${shelter.id}/occupancy`, { percent: 100 });
-    }
-    await assert.rejects(getRoute(40.41, 49.86, "s1", "en", "special_needs"), {
-      code: "NO_ACCESSIBLE_ROUTE", status: 409,
-    });
-  });
+  await t.test(
+    "section K HTTP 503 backup, AZ/EN/RU notices and recovery",
+    async () => {
+      await simulate("provider", { state: "http503" });
+      const notices = new Set();
+      for (const lang of ["az", "en", "ru"]) {
+        const backup = await getRoute(
+          40.41,
+          49.86,
+          "s2",
+          lang,
+          "special_needs",
+        );
+        assert.equal(backup.offline, true);
+        assert.equal(backup.source, "fallback");
+        assert.equal(backup.accessible, true);
+        assert.equal(backup.transport, "wheelchair_medical");
+        assert.equal(backup.notice.code, "OFFLINE_BACKUP_ROUTE_MODE");
+        assert.deepEqual(backup.alternatives, []);
+        notices.add(backup.notice.message);
+      }
+      assert.equal(notices.size, 3);
+      await simulate("provider", { state: "up" });
+      const recovered = await getRoute(40.41, 49.86, "s2", "en", "standard");
+      assert.equal(recovered.offline, false);
+      assert.equal(recovered.notice, null);
+      assert.equal(recovered.fallbackMode, null);
+    },
+  );
+  await t.test(
+    "invalid citizen WebSocket closes with observable code 1008",
+    async () => {
+      const ws = new WebSocket(
+        "ws://localhost:8000/ws/citizen?citizenId=invalid&lang=en",
+      );
+      const code = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error("Missing policy close"));
+        }, 5000);
+        ws.onerror = () => {};
+        ws.onclose = (event) => {
+          clearTimeout(timer);
+          resolve(event.code);
+        };
+      });
+      assert.equal(code, 1008);
+    },
+  );
+  await t.test(
+    "no accessible destination returns the documented 409",
+    async () => {
+      const shelters = (await api.getShelters("en")).items;
+      for (const shelter of shelters.filter(
+        (s) => s.accessible && s.status !== "closed",
+      )) {
+        await simulate(`shelters/${shelter.id}/occupancy`, { percent: 100 });
+      }
+      await assert.rejects(
+        getRoute(40.41, 49.86, "s1", "en", "special_needs"),
+        {
+          code: "NO_ACCESSIBLE_ROUTE",
+          status: 409,
+        },
+      );
+    },
+  );
 });

@@ -98,5 +98,11 @@
   "NOT_FOUND": "The requested information is unavailable. Please refresh.",
   "ERROR": "The service could not complete the request. Retry.",
   "appError": "The application could not continue",
-  "appErrorHelp": "Reload the page to try again."
+  "appErrorHelp": "Reload the page to try again.",
+  "OFFLINE_BACKUP_ROUTE_MODE": "Offline / backup route mode is active",
+  "backupCacheWarning": "Using a previous route supplied by the server. Conditions may have changed; check your surroundings.",
+  "backupMatrixWarning": "Using an estimated backup route supplied by the server. Check your surroundings before proceeding.",
+  "shelter": "Shelter",
+  "park": "Park",
+  "stadium": "Stadium"
 }

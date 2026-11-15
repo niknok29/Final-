@@ -3,6 +3,7 @@ import {
   mockShelters,
   mockRoads,
   localizeMock,
+  mockOfflineNotice,
 } from "./mock.js";
 
 const env = import.meta.env || {};
@@ -173,6 +174,9 @@ export async function getRoute(
             : "SHELTER_NEARLY_FULL",
       requestedShelterId: shelterId,
       source: "fallback",
+      offline: true,
+      fallbackMode: "straight_line",
+      notice: mockOfflineNotice(lang),
       accessible: shelter.accessible,
       transport: profile === "special_needs" ? "wheelchair_medical" : "walk",
       accessibilityNotes:

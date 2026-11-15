@@ -27,6 +27,7 @@ py -m venv .test-venv
 New-Item -ItemType Directory -Force .test-artifacts
 $env:PYTHONDONTWRITEBYTECODE = '1'
 $env:DATABASE_URL = 'sqlite:///' + (Join-Path (Get-Location) '.test-artifacts/integration.db').Replace('\','/')
+$env:AUDIT_LOG = Join-Path (Get-Location) '.test-artifacts/backend-audit.log'
 .test-venv/Scripts/python.exe -m uvicorn app.main:app --app-dir ../backend --host 127.0.0.1 --port 8000
 ```
 
@@ -66,3 +67,5 @@ The integration suite uses documented demo dispatcher authentication and simulat
 Verified on 2026-11-15: nine unit tests and seven real FastAPI integration tests passed, including priority ordering, WebSocket shelter/road/reroute messages, provider recovery, and HTTP 409. Browser checks covered AZ/EN/RU, language persistence, accessible routing, inaccessible shelter disabling, SOS success/cooldown, safe resolution, provider fallback, missing accessible route, and 360px overflow/layout. A live manual reroute that exhausted reachable accessible destinations correctly showed the localized error and removed the route.
 
 Real integration used the backend's default built-in routing provider plus its documented outage simulator. The optional external OSRM service and physical-device GPS/vibration were not validated.
+
+Citizen audit follow-up (2026-11-15): synced `origin/develop` through section K/L, preserved all team AI log entries, and verified 11 unit tests, 9 real FastAPI integration tests, ESLint and production build. Browser checks verified AZ/EN/RU, localized section K offline notices, shelter/park/stadium icons and successful refresh/recovery without explicitly selecting a shelter. Backup cache/matrix routes now have appropriate warnings instead of being described as straight lines. Live updates no longer refetch the entire metadata snapshot, and clicking the current destination does not request it again. Section K backup data remains server-provided; client localStorage route backups and queued SOS are deferred to the separate DROP 2 task.

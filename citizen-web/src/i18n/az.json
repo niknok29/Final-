@@ -98,5 +98,11 @@
   "NOT_FOUND": "İstənilən məlumat mövcud deyil. Yeniləyin.",
   "ERROR": "Xidmət sorğunu tamamlaya bilmədi. Təkrar edin.",
   "appError": "Tətbiq davam edə bilmədi",
-  "appErrorHelp": "Yenidən cəhd etmək üçün səhifəni yeniləyin."
+  "appErrorHelp": "Yenidən cəhd etmək üçün səhifəni yeniləyin.",
+  "OFFLINE_BACKUP_ROUTE_MODE": "Oflayn / Ehtiyat marşrut rejimində işləyir",
+  "backupCacheWarning": "Serverin təqdim etdiyi əvvəlki marşrut istifadə olunur. Şərait dəyişmiş ola bilər; ətrafınızı yoxlayın.",
+  "backupMatrixWarning": "Serverin təqdim etdiyi təxmini ehtiyat marşrut istifadə olunur. Hərəkətdən əvvəl ətrafınızı yoxlayın.",
+  "shelter": "Sığınacaq",
+  "park": "Park",
+  "stadium": "Stadion"
 }

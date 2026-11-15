@@ -27,6 +27,7 @@ export default function useCitizen({ position, selected, profile, lang }) {
   const [routeError, setRouteError] = useState(null);
   const [connection, setConnection] = useState("connecting");
   const [revision, setRevision] = useState(0);
+  const [routeRevision, setRouteRevision] = useState(0);
   const [notice, setNotice] = useState(null);
   const routeVersion = useRef(0);
   const retry = useCallback(() => setRevision((n) => n + 1), []);
@@ -93,7 +94,11 @@ export default function useCitizen({ position, selected, profile, lang }) {
         if (!controller.signal.aborted && version === routeVersion.current) {
           setRouteResult({ data: route, key: requestKey });
           if (route.rerouted)
-            setNotice({ reason: route.reason, id: Date.now(), key: requestKey });
+            setNotice({
+              reason: route.reason,
+              id: Date.now(),
+              key: requestKey,
+            });
         }
       } catch (error) {
         if (!controller.signal.aborted && version === routeVersion.current) {
@@ -109,7 +114,7 @@ export default function useCitizen({ position, selected, profile, lang }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [position, selected, profile, lang, revision, requestKey]);
+  }, [position, selected, profile, lang, revision, routeRevision, requestKey]);
 
   const onEvent = useEffectEvent((event) => {
     const { type, data } = event;
@@ -143,8 +148,16 @@ export default function useCitizen({ position, selected, profile, lang }) {
           ? old[key].map((x) => (x.id === data.id ? data : x))
           : [...old[key], data],
       }));
+      if (type === "shelter.updated") {
+        setNearest((items) =>
+          items.map((item) =>
+            item.id === data.id ? { ...item, ...data } : item,
+          ),
+        );
+      }
       // Revalidate even if no reroute can be pushed (e.g. NO_ACCESSIBLE_ROUTE).
-      setRevision((n) => n + 1);
+      // Do not refetch districts/shelters/roads for every individual live update.
+      setRouteRevision((n) => n + 1);
     }
   });
   useEffect(

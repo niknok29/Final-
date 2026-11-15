@@ -106,3 +106,15 @@ export function localizeMock(item, lang) {
     name: names[lang]?.[item.id] || item.name,
   };
 }
+
+export function mockOfflineNotice(lang) {
+  return {
+    code: "OFFLINE_BACKUP_ROUTE_MODE",
+    message:
+      {
+        az: "Oflayn / Ehtiyat marşrut rejimində işləyir",
+        en: "Offline / backup route mode is active",
+        ru: "Работает офлайн / в режиме резервных маршрутов",
+      }[lang] || "Oflayn / Ehtiyat marşrut rejimində işləyir",
+  };
+}

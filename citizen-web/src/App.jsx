@@ -14,6 +14,11 @@ import "leaflet/dist/leaflet.css";
 import "./App.css";
 import { USE_MOCK, sendSOS, markSafe } from "./api/client";
 import useCitizen from "./hooks/useCitizen";
+import {
+  routeNoticeKey,
+  routeWarningKey,
+  shelterKindIcon,
+} from "./routeDisplay";
 
 const BAKU = [40.4093, 49.8671];
 const EMPTY_PATH = [];
@@ -28,6 +33,19 @@ const icons = Object.fromEntries(
         iconAnchor: [14, 14],
       }),
     ],
+  ),
+);
+const shelterIcons = Object.fromEntries(
+  ["open", "filling", "near_full", "full", "closed"].flatMap((status) =>
+    ["shelter", "park", "stadium"].map((kind) => [
+      `${status}-${kind}`,
+      L.divIcon({
+        className: `shelter-marker marker-${status}`,
+        html: shelterKindIcon(kind),
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      }),
+    ]),
   ),
 );
 function MapClick({ onSelect }) {
@@ -55,6 +73,16 @@ function MapNavigation({ position, path }) {
       zoomOut.title = t("zoomOut");
       zoomOut.setAttribute("aria-label", t("zoomOut"));
     }
+    const translatePopupClose = () => {
+      const close = root.querySelector(".leaflet-popup-close-button");
+      if (close) {
+        close.title = t("close");
+        close.setAttribute("aria-label", t("close"));
+      }
+    };
+    translatePopupClose();
+    map.on("popupopen", translatePopupClose);
+    return () => map.off("popupopen", translatePopupClose);
   }, [map, t]);
   return null;
 }
@@ -266,6 +294,10 @@ export default function App() {
   const routeData = data.routeData;
   const path = routeData?.route?.path || EMPTY_PATH;
   const destination = routeData?.shelter;
+  const offlineNotice = routeNoticeKey(routeData);
+  function selectShelter(id) {
+    if (id !== destination?.id) setSelected(id);
+  }
   const blocked = (shelter) =>
     ["full", "closed"].includes(shelter.status) ||
     (profile === "special_needs" && !shelter.accessible);
@@ -286,10 +318,18 @@ export default function App() {
   return (
     <div className="citizen-app">
       <div className="mobile-actions" aria-label={t("emergencyHelp")}>
-        <button className="sos-main" disabled={sending || saving || remaining > 0} onClick={() => setSosOpen(true)}>
+        <button
+          className="sos-main"
+          disabled={sending || saving || remaining > 0}
+          onClick={() => setSosOpen(true)}
+        >
           {remaining ? t("waitSeconds", { count: remaining }) : t("sendSOS")}
         </button>
-        <button className="safe-main" disabled={sending || saving} onClick={submitSafe}>
+        <button
+          className="safe-main"
+          disabled={sending || saving}
+          onClick={submitSafe}
+        >
           {t(saving ? "sending" : "safe")}
         </button>
       </div>
@@ -354,6 +394,11 @@ export default function App() {
             <button onClick={data.retry}>{t("retry")}</button>
           </div>
         )}
+        {offlineNotice && (
+          <div className="notice warning offline-notice" role="status">
+            {t(offlineNotice)}
+          </div>
+        )}
         <div className="content-grid">
           <section className="map-card" aria-label={t("liveMap")}>
             <div className="card-heading">
@@ -416,15 +461,18 @@ export default function App() {
                   <Marker
                     key={`${s.id}-${lang}-${s.status}-${s.name}`}
                     position={[s.lat, s.lng]}
-                    icon={icons[s.status] || icons.open}
-                    title={`${s.name}: ${t(s.status)}`}
+                    icon={
+                      shelterIcons[`${s.status}-${s.kind}`] ||
+                      shelterIcons["open-shelter"]
+                    }
+                    title={`${s.name}: ${t(s.kind)} · ${t(s.status)}`}
                   >
                     <Popup>
                       <strong>{s.name}</strong>
                       <div className="shelter-details">{shelterSummary(s)}</div>
                       <button
                         disabled={blocked(s)}
-                        onClick={() => setSelected(s.id)}
+                        onClick={() => selectShelter(s.id)}
                       >
                         {t("selectRoute")}
                       </button>
@@ -505,9 +553,13 @@ export default function App() {
                   key={s.id}
                   className={`shelter-item ${destination?.id === s.id ? "selected" : ""}`}
                   disabled={blocked(s)}
-                  onClick={() => setSelected(s.id)}
+                  onClick={() => selectShelter(s.id)}
                 >
-                  <span className="shelter-title">{s.name}</span>
+                  <span className="shelter-title">
+                    <span aria-hidden="true">{shelterKindIcon(s.kind)}</span>{" "}
+                    {s.name}
+                  </span>
+                  <span>{t(s.kind)}</span>
                   <span className="shelter-distance">
                     {(s.distanceMeters / 1000).toFixed(2)} {t("km")}
                   </span>
@@ -564,7 +616,7 @@ export default function App() {
                   {routeData.source === "fallback" && (
                     <div className="notice warning" role="status">
                       {t("fallbackRoute")}
-                      <p>{t("fallbackWarning")}</p>
+                      <p>{t(routeWarningKey(routeData))}</p>
                       <button onClick={data.retry}>{t("refreshRoute")}</button>
                     </div>
                   )}

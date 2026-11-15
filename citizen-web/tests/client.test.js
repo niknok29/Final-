@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import i18next from "i18next";
+import {
+  routeNoticeKey,
+  routeWarningKey,
+  shelterKindIcon,
+} from "../src/routeDisplay.js";
 import {
   api,
   getCitizenId,
@@ -217,11 +223,97 @@ test("WebSocket reconnects with capped backoff; cleanup and 1008 stop retries", 
     () => {},
     () => {},
   );
+  assert.equal(sockets.at(-1).url.searchParams.get("lang"), "en");
   sockets.at(-1).onclose({ code: 1006 });
   cleanup2();
   const count2 = sockets.length;
   t.mock.timers.tick(20000);
   assert.equal(sockets.length, count2);
+});
+
+test("section K server backup presentation distinguishes cache, matrix and straight line", () => {
+  assert.equal(routeNoticeKey({ offline: true }), "OFFLINE_BACKUP_ROUTE_MODE");
+  assert.equal(routeNoticeKey({ offline: false }), null);
+  assert.equal(routeNoticeKey(null), null);
+  assert.equal(
+    routeWarningKey({ fallbackMode: "cache" }),
+    "backupCacheWarning",
+  );
+  assert.equal(
+    routeWarningKey({ fallbackMode: "static_matrix" }),
+    "backupMatrixWarning",
+  );
+  assert.equal(
+    routeWarningKey({ fallbackMode: "straight_line" }),
+    "fallbackWarning",
+  );
+  assert.equal(routeWarningKey({ source: "fallback" }), "fallbackWarning");
+  assert.equal(
+    new Set(["shelter", "park", "stadium"].map(shelterKindIcon)).size,
+    3,
+  );
+});
+
+test("actual i18next language changes translate judging UI, statuses and offline notice", async () => {
+  const resources = Object.fromEntries(
+    ["az", "en", "ru"].map((lang) => [
+      lang,
+      {
+        translation: JSON.parse(
+          fs.readFileSync(
+            new URL(`../src/i18n/${lang}.json`, import.meta.url),
+            "utf8",
+          ),
+        ),
+      },
+    ]),
+  );
+  const instance = i18next.createInstance();
+  await instance.init({ resources, lng: "az", fallbackLng: "az" });
+  const headings = new Set(),
+    notices = new Set();
+  const keys = [
+    "mainTitle",
+    "sendSOS",
+    "safe",
+    "specialNeeds",
+    "accessibleRoute",
+    "walk",
+    "wheelchair_medical",
+    "RAMP",
+    "STEP_FREE",
+    "MEDICAL_TRANSPORT_AVAILABLE",
+    "prioritySOS",
+    "activeSOS",
+    "safeStatus",
+    "ROAD_CLOSED",
+    "SHELTER_NEARLY_FULL",
+    "SHELTER_FULL",
+    "SHELTER_NOT_ACCESSIBLE",
+    "ROAD_NOT_ACCESSIBLE",
+    "NO_ACCESSIBLE_ROUTE",
+    "OFFLINE_BACKUP_ROUTE_MODE",
+    "fallbackRoute",
+    "backupCacheWarning",
+    "backupMatrixWarning",
+    "shelter",
+    "park",
+    "stadium",
+    "NETWORK_ERROR",
+    "connected",
+    "rejected",
+  ];
+  for (const lang of ["az", "en", "ru"]) {
+    await instance.changeLanguage(lang);
+    assert.equal(instance.resolvedLanguage, lang);
+    for (const key of keys)
+      assert.notEqual(instance.t(key), key, `${lang}: missing ${key}`);
+    assert.ok(!instance.t("rateLimitedSeconds", { count: 17 }).includes("{{"));
+    headings.add(instance.t("mainTitle"));
+    notices.add(instance.t("OFFLINE_BACKUP_ROUTE_MODE"));
+  }
+  assert.equal(headings.size, 3);
+  assert.equal(notices.size, 3);
 });
 
 test("AZ / EN / RU dictionaries have matching nonempty keys and all literal UI translations", () => {
