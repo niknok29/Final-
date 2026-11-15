@@ -19,6 +19,7 @@ def client():
         with Session(engine) as s:
             seed(s)  # wipe + reseed so every test starts from the same state
         routing.set_state("up")
+        routing.clear_cache()
         realtime.hub.profiles.clear()
         realtime.hub.targets.clear()
         util.sos_limiter.reset()

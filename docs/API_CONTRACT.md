@@ -259,3 +259,27 @@ Body `{"state":"up"|"down"|"slow"}` → `{"ok":true,"state":"down"}` (invalid st
 
 ### J.4 Optional real provider (server config, no API change)
 Env `ROUTING_PROVIDER=osrm` uses the public OSRM demo server `router.project-osrm.org` (driving profile, up to 2 route options) with a hard 2 s limit per call; any error, timeout or bad payload goes through the same breaker + fallback logic. Default (`mock`, or unset) keeps the built-in mock provider. The demo server is for light use only. Env `MOCK_ROUTING_DOWN=1` starts the server with the provider forced `down`.
+
+---
+## K. Offline / backup route mode (additive, v1.4)
+The external map/routing API can fail (HTTP 503, timeout, any error). The backend never fails because of it: routes are served from LOCAL backup data and flagged as offline. Nothing in A–J changes for existing clients.
+
+### K.1 Provider simulation states — `POST /api/sim/provider`
+`{"state":"up"|"down"|"slow"|"http503"}`. New: `http503` (the provider fails like an HTTP 503). `slow` simulates a response slower than 5 s; our own 2 s timeout fires first, so a request waits at most 2 s (once per request). Real OSRM failures (503, timeout, bad payload, any exception) take the same path. After 3 failed requests the circuit breaker opens automatically (30 s, then one trial call); `state:"up"` closes it immediately.
+
+### K.2 `GET /api/health`
+Adds `"degraded": true|false` — `true` when the provider state is not `up` or the breaker is open. Full shape: `{"status":"ok","routingProvider":"up"|"down","breaker":"closed"|"open","degraded":false}`.
+
+### K.3 `GET /api/route` and WS `reroute` — new fields (all profiles)
+| field | value |
+|---|---|
+| `offline` | `true` when the route comes from backup data (same condition as `source:"fallback"`, which is kept for compatibility) |
+| `fallbackMode` | `null` (provider route) \| `"cache"` \| `"static_matrix"` \| `"straight_line"` |
+| `notice` | `null` or `{"code":"OFFLINE_BACKUP_ROUTE_MODE","message":"<localized by ?lang>"}` — az `Oflayn / Ehtiyat marşrut rejimində işləyir`, en `Offline / backup route mode is active`, ru `Работает офлайн / в режиме резервных маршрутов` |
+
+Backup order: **(1) cache** — the last successful route per (shelter, origin on a ~200 m grid), last 500 kept; **(2) static matrix** — a route precomputed at startup (and after seed/reset) for every district centroid × every shelter with a 1.3 detour factor on distance/duration; the entry of the origin's nearest district is used (its polyline is re-anchored at the real origin, so distance/duration are estimates); **(3) straight line** (Haversine). `alternatives` is `[]` in offline mode. Closed roads, accessibility rules (`profile=special_needs`), shelter occupancy/status and reroute logic still apply because they come from the local database. UIs should show the `notice` (badge/banner) whenever `offline` is `true`.
+
+### K.4 Robustness
+- Any unexpected server exception returns HTTP 500 with the standard body `{"error":{"code":"INTERNAL_ERROR","message":"Internal server error"}}` (no stack trace or internals; CORS headers are still present; the details are logged server-side).
+- `GET /api/route` never returns 5xx because of the routing provider.
+- WebSocket handlers and broadcasts swallow and log exceptions; one broken client never affects others.

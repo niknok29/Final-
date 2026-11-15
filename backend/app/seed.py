@@ -1,5 +1,6 @@
 from sqlmodel import Session, select
 
+from . import routing
 from .models import Alert, Crew, District, Road, Shelter, Sos
 
 # id, az, en, ru, lat, lng
@@ -85,3 +86,5 @@ def seed(s: Session, only_if_empty: bool = False):
     s.add_all(Road(id=i, name=a, name_en=e, name_ru=r, status=st, path=p, accessible=i not in NOT_ACCESSIBLE_ROADS)
               for i, a, e, r, st, p in ROADS)
     s.commit()
+    routing.clear_cache()
+    routing.build_matrix(s)  # local backup routes for every district x shelter

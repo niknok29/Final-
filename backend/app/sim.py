@@ -66,12 +66,12 @@ def set_occupancy(shelter_id: str, body: OccIn, s: Session = Depends(get_session
 
 
 class ProviderIn(BaseModel):
-    state: Literal["up", "down", "slow"]
+    state: Literal["up", "down", "slow", "http503"]
 
 
 @router.post("/provider")
 def set_provider(body: ProviderIn):
-    """Force the routing provider into outage ("down"), timeout/latency ("slow") or normal ("up") mode."""
+    """Force the routing provider into outage ("down"), HTTP 503 ("http503"), >5 s latency ("slow") or normal ("up")."""
     routing.set_state(body.state)
     return {"ok": True, "state": body.state}
 
