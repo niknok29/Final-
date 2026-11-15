@@ -1,5 +1,6 @@
 """WebSocket hubs + thread-safe emit helpers (callable from sync handlers)."""
 import asyncio
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -13,6 +14,7 @@ from .util import LANGS, ApiError, iso, norm_lang
 from .views import alert_out, crew_out, road_out, shelter_out, sos_out
 
 router = APIRouter()
+log = logging.getLogger("crisis.ws")
 
 
 class Hub:
@@ -35,11 +37,15 @@ class Hub:
             return
 
         async def run():
-            for ws, lang in select():
-                try:
-                    await ws.send_json({"type": type_, "data": data[lang], "ts": iso(now())})
-                except Exception:
-                    self.drop(ws)
+            try:
+                for ws, lang in select():
+                    try:
+                        await ws.send_json({"type": type_, "data": data[lang], "ts": iso(now())})
+                    except Exception:  # a broken client must never affect the others or the caller
+                        log.warning("dropping websocket after failed send of %s", type_, exc_info=True)
+                        self.drop(ws)
+            except Exception:
+                log.exception("websocket broadcast %s failed", type_)
 
         asyncio.run_coroutine_threadsafe(run(), self.loop)
 
@@ -111,16 +117,17 @@ def reroute_check():
         for cid, (lat, lng, sid, profile) in list(hub.targets.items()):
             try:  # special_needs keeps the accessible constraint; no accessible route -> nothing to push
                 r = services.build_route(s, lat, lng, sid, "az", profile)
+                if not r["rerouted"]:
+                    continue
+                payload = by_lang(lambda l: {**services.build_route(s, lat, lng, sid, l, profile),
+                                             "message": "ROUTE_CHANGED"})
             except ApiError:
                 continue
-            if not r["rerouted"]:
+            except Exception:  # one citizen's failure must not break the caller (a sim / admin request)
+                log.exception("reroute check failed for citizen %s", cid)
                 continue
             hub.targets[cid] = (lat, lng, r["shelter"]["id"], profile)
-            to_citizens(
-                "reroute",
-                by_lang(lambda l: {**services.build_route(s, lat, lng, sid, l, profile), "message": "ROUTE_CHANGED"}),
-                cid,
-            )
+            to_citizens("reroute", payload, cid)
 
 
 # ---- WebSocket endpoints ----
@@ -130,8 +137,17 @@ async def _hold(ws: WebSocket):
             await ws.receive_text()
     except WebSocketDisconnect:
         pass
+    except Exception:  # never let a handler error bubble up as an unhandled ASGI exception
+        log.exception("websocket handler error")
     finally:
         hub.drop(ws)
+
+
+async def _reject(ws: WebSocket):
+    """Accept, then close with 1008 (policy violation). Closing before accept would be an HTTP 403 on the
+    handshake, which browsers report as code 1006 - clients could not tell "bad token" from "network down"."""
+    await ws.accept()
+    await ws.close(code=1008)
 
 
 @router.websocket("/ws/citizen")
@@ -139,7 +155,7 @@ async def ws_citizen(ws: WebSocket, citizenId: str = "", lang: str = "az"):
     try:
         cid = str(UUID(citizenId))
     except ValueError:
-        return await ws.close(code=1008)
+        return await _reject(ws)
     await ws.accept()
     hub.citizens[ws] = (cid, norm_lang(lang))
     await _hold(ws)
@@ -148,10 +164,8 @@ async def ws_citizen(ws: WebSocket, citizenId: str = "", lang: str = "az"):
 @router.websocket("/ws/dispatcher")
 async def ws_dispatcher(ws: WebSocket, token: str = "", lang: str = "az"):
     claims = decode(token)
-    if not claims:
-        return await ws.close(code=1008)
-    if not can(claims.get("role", ""), "dispatch"):
-        return await ws.close(code=1008)
+    if not claims or not can(claims.get("role", ""), "dispatch"):
+        return await _reject(ws)
     await ws.accept()
     hub.dispatchers[ws] = norm_lang(lang)
     await _hold(ws)

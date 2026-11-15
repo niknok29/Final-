@@ -1,14 +1,14 @@
 from typing import Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, select
 
-from . import alerts, realtime, routing, services
+from . import alerts, audit, cache, realtime, routing, services
 from .db import get_session
 from .models import District, Road, Shelter, Sos, now
-from .util import get_lang, iso, loc, sos_limiter
+from .util import get_lang, iso, loc, sanitize_note, sos_limiter
 from .views import road_out, shelter_out, sos_out
 
 router = APIRouter(prefix="/api")
@@ -22,6 +22,11 @@ class SosIn(BaseModel):
     note: str = Field("", max_length=200)
     profile: Optional[Literal["standard", "special_needs"]] = None  # omitted -> citizen's last known profile, else standard
 
+    @field_validator("note")
+    @classmethod
+    def _clean_note(cls, v: str) -> str:
+        return sanitize_note(v)  # no HTML tags / control chars ever reach the DB or the dispatcher UI
+
 
 class SafeIn(BaseModel):
     citizenId: UUID
@@ -31,18 +36,21 @@ class SafeIn(BaseModel):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "routingProvider": "up" if routing.routing_up() else "down",
-            "breaker": routing.status()["breaker"]}
+    up = routing.routing_up()
+    st = routing.status()
+    return {"status": "ok", "routingProvider": "up" if up else "down",
+            "breaker": st["breaker"], "degraded": not up, "state": st["state"]}
 
 
 @router.get("/districts")
 def districts(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return {"items": [{"id": d.id, "name": loc(d, lang), "lat": d.lat, "lng": d.lng} for d in s.exec(select(District)).all()]}
+    return cache.get_or_set(("districts", lang), lambda: {
+        "items": [{"id": d.id, "name": loc(d, lang), "lat": d.lat, "lng": d.lng} for d in s.exec(select(District)).all()]})
 
 
 @router.get("/shelters")
 def shelters(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return {"items": [shelter_out(x, lang) for x in s.exec(select(Shelter)).all()]}
+    return cache.get_or_set(("shelters", lang), lambda: {"items": [shelter_out(x, lang) for x in s.exec(select(Shelter)).all()]})
 
 
 @router.get("/shelters/nearest")
@@ -52,7 +60,7 @@ def nearest(lat: float, lng: float, limit: int = 3, lang: str = Depends(get_lang
 
 @router.get("/roads")
 def roads(lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return {"items": [road_out(r, lang) for r in s.exec(select(Road)).all()]}
+    return cache.get_or_set(("roads", lang), lambda: {"items": [road_out(r, lang) for r in s.exec(select(Road)).all()]})
 
 
 @router.get("/route")
@@ -70,8 +78,10 @@ def route(fromLat: float, fromLng: float, shelterId: Optional[str] = None, citiz
 
 
 @router.post("/sos", status_code=201, dependencies=[Depends(sos_limiter)])
-def create_sos(body: SosIn, s: Session = Depends(get_session)):
+def create_sos(body: SosIn, request: Request, s: Session = Depends(get_session)):
     x = alerts.submit_sos(s, str(body.citizenId), body.type, body.lat, body.lng, body.note, body.profile)
+    audit.record("sos.create", user=str(body.citizenId), role="citizen", ip=audit.client_ip(request),
+                 sosId=x.id, type=body.type, profile=x.profile)
     return {"id": x.id, "status": x.status, "createdAt": iso(x.created_at)}
 
 

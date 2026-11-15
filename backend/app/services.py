@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 from . import routing
 from .models import Crew, District, Road, Shelter, Sos
 from .util import ApiError, haversine, loc
-from .views import shelter_out
+from .views import OFFLINE_NOTICE, shelter_out
 
 BLOCK_M = 200  # a blocked road within this distance of the route blocks it
 ORIGIN_IGNORE_M = 250  # inaccessible roads right under the citizen's feet do not block (they are already there)
@@ -70,10 +70,10 @@ def build_route(s: Session, lat: float, lng: float, shelter_id: str | None, lang
     ctx: dict = {}  # per-request routing context (stops asking a failing provider again)
 
     def go(x):
-        r, alts, src = routing.plan((lat, lng), (x.lat, x.lng), ctx)
+        r, alts, src, mode = routing.plan((lat, lng), (x.lat, x.lng), ctx, x.id)
         by_closed = blocked(r["path"], closed)
         by_access = special and blocked(r["path"], inaccessible, (lat, lng))
-        return x, r, alts, src, by_closed, by_access
+        return x, r, alts, src, by_closed, by_access, mode
 
     reason = None
     rerouted = False
@@ -107,7 +107,8 @@ def build_route(s: Session, lat: float, lng: float, shelter_id: str | None, lang
             # special-needs citizens never keep a shelter/route that is unusable for them
             if not rerouted and special and (not req.accessible or req.status in ("full", "closed") or target[4] or target[5]):
                 raise no_route
-    x, r, alts, src, _, _ = target
+    x, r, alts, src, _, _, mode = target
+    offline = src == "fallback"
     medical = special and s.exec(
         select(Crew.id).where(Crew.status == "available", Crew.accessible_transport == True)  # noqa: E712
     ).first() is not None
@@ -115,6 +116,8 @@ def build_route(s: Session, lat: float, lng: float, shelter_id: str | None, lang
         "shelter": shelter_out(x, lang), "route": r, "alternatives": alts,
         "rerouted": rerouted, "reason": reason if rerouted else None,
         "requestedShelterId": req.id if req else x.id, "source": src,
+        "offline": offline, "fallbackMode": mode,
+        "notice": {"code": "OFFLINE_BACKUP_ROUTE_MODE", "message": OFFLINE_NOTICE[lang]} if offline else None,
         "accessible": x.accessible and not blocked(r["path"], inaccessible, (lat, lng)),
         "transport": "wheelchair_medical" if special else "walk",
         "accessibilityNotes": (["RAMP", "STEP_FREE"] + (["MEDICAL_TRANSPORT_AVAILABLE"] if medical else [])) if special else [],

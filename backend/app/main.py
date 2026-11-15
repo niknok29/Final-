@@ -1,20 +1,25 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, dispatch, realtime, sim
 from .api import router
 from .db import init_db
+from .security import SecurityMiddleware
 from .util import ApiError
 
+log = logging.getLogger("crisis")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    auth.warn_secret()
     init_db()
     realtime.hub.loop = asyncio.get_running_loop()
     yield
@@ -22,17 +27,43 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Crisis Evac Engine", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _catch_all(request: Request, call_next):
+    """Registered BEFORE the CORS middleware, so it sits inside it: unexpected errors still get CORS headers
+    and the standard error JSON (no stack trace in the body)."""
+    try:
+        return await call_next(request)
+    except Exception:
+        return _internal(request)
+
+
+# add_middleware: the LAST one added is the OUTERMOST. Request path: gzip -> CORS -> security -> catch-all -> app,
+# so rate-limit / body-limit rejections still carry CORS headers and everything is gzip-compressed.
+app.add_middleware(SecurityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 for r in (router, auth.router, dispatch.router, sim.router, realtime.router):
     app.include_router(r)
 
 
 def _err(status: int, code: str, message: str, headers: dict | None = None):
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status, headers=headers)
+
+
+def _internal(request: Request):
+    log.exception("unhandled error on %s %s", request.method, request.url.path)
+    return _err(500, "INTERNAL_ERROR", "Internal server error")
+
+
+@app.exception_handler(Exception)  # safety net for anything that escapes the middleware above
+async def _unhandled(request: Request, _: Exception):
+    return _internal(request)
 
 
 @app.exception_handler(ApiError)

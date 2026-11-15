@@ -18,6 +18,13 @@ ALERT_MESSAGES = {
 }
 
 
+OFFLINE_NOTICE = {
+    "az": "Oflayn / Ehtiyat marşrut rejimində işləyir",
+    "en": "Offline / backup route mode is active",
+    "ru": "Работает офлайн / в режиме резервных маршрутов",
+}
+
+
 def crew_out(c: Crew) -> dict:
     return {"id": c.id, "name": c.name, "status": c.status, "lat": c.lat, "lng": c.lng,
             "assignedAlertId": c.assigned_alert_id, "accessibleTransport": c.accessible_transport}

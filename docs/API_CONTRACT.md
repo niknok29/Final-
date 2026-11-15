@@ -185,7 +185,7 @@ Everything above still holds. These items were unspecified or are strictly addit
 1. **`GET /api/route` — optional `citizenId=<uuid>` query param (ADDITIVE).** When sent, the backend remembers the shelter the citizen is heading to, so it can push a `reroute` over `WS /ws/citizen`. Without it, no `reroute` push is possible for that citizen. Send it on every route request.
 2. **`reroute` WS message:** `data.message` is the stable code `ROUTE_CHANGED`; `data.reason` carries the cause (`ROAD_CLOSED` | `SHELTER_NEARLY_FULL` | `SHELTER_FULL`). After a reroute the backend tracks the NEW shelter as the citizen's target.
 3. **Optional `lang` on WebSockets:** `/ws/citizen?citizenId=..&lang=az|en|ru` and `/ws/dispatcher?token=..&lang=..` (default `az`) localize `name`/`message` fields in pushed payloads.
-4. **WS rejection:** an invalid/missing `citizenId` (must be a UUID), an invalid/expired `token`, or a role without the `dispatch` permission closes the socket with code **1008** during the handshake (client sees a failed connection, not an `error` message).
+4. **WS rejection:** an invalid/missing `citizenId` (must be a UUID), an invalid/expired `token`, or a role without the `dispatch` permission is answered by **accepting the connection and immediately closing it with code 1008** (policy violation). The browser therefore fires `onopen` briefly (no data is ever sent) and then `onclose` with `event.code === 1008` — NOT 1006. Clients must treat 1008 as "authentication failed": stop reconnecting and go to the login screen (dispatcher) / regenerate state (citizen). Any other close code (e.g. 1006) is a network problem → reconnect with backoff. Do not treat the brief `onopen` before a 1008 as a successful connection (wait for a first message, or ignore the open if it is followed by 1008).
 5. **`route.shelter`** is the full shelter object (same as `GET /api/shelters`, incl. `capacity` and `occupancy`) — a superset of the example.
 6. **`route.alternatives[].label`** is a fixed string `"Alternativ N"`; translate it client-side. When `source` is `fallback`, `alternatives` is `[]`.
 7. **Validation:** `citizenId` must be a valid UUID; `type` must be one of the hazard enums; `lat`/`lng` ranges are checked; `note` max 200. Violations → **422** `{"error":{"code":"VALIDATION_ERROR",...}}`.
@@ -259,3 +259,65 @@ Body `{"state":"up"|"down"|"slow"}` → `{"ok":true,"state":"down"}` (invalid st
 
 ### J.4 Optional real provider (server config, no API change)
 Env `ROUTING_PROVIDER=osrm` uses the public OSRM demo server `router.project-osrm.org` (driving profile, up to 2 route options) with a hard 2 s limit per call; any error, timeout or bad payload goes through the same breaker + fallback logic. Default (`mock`, or unset) keeps the built-in mock provider. The demo server is for light use only. Env `MOCK_ROUTING_DOWN=1` starts the server with the provider forced `down`.
+
+---
+## K. Offline / backup route mode (additive, v1.4)
+The external map/routing API can fail (HTTP 503, timeout, any error). The backend never fails because of it: routes are served from LOCAL backup data and flagged as offline. Nothing in A–J changes for existing clients.
+
+### K.1 Provider simulation states — `POST /api/sim/provider`
+`{"state":"up"|"down"|"slow"|"http503"}`. New: `http503` (the provider fails like an HTTP 503). `slow` simulates a response slower than 5 s; our own 2 s timeout fires first, so a request waits at most 2 s (once per request). Real OSRM failures (503, timeout, bad payload, any exception) take the same path. After 3 failed requests the circuit breaker opens automatically (30 s, then one trial call); `state:"up"` closes it immediately.
+
+### K.2 `GET /api/health`
+Adds `"degraded": true|false` — `true` when the provider state is not `up` or the breaker is open. Full shape: `{"status":"ok","routingProvider":"up"|"down","breaker":"closed"|"open","degraded":false}`.
+
+### K.3 `GET /api/route` and WS `reroute` — new fields (all profiles)
+| field | value |
+|---|---|
+| `offline` | `true` when the route comes from backup data (same condition as `source:"fallback"`, which is kept for compatibility) |
+| `fallbackMode` | `null` (provider route) \| `"cache"` \| `"static_matrix"` \| `"straight_line"` |
+| `notice` | `null` or `{"code":"OFFLINE_BACKUP_ROUTE_MODE","message":"<localized by ?lang>"}` — az `Oflayn / Ehtiyat marşrut rejimində işləyir`, en `Offline / backup route mode is active`, ru `Работает офлайн / в режиме резервных маршрутов` |
+
+Backup order: **(1) cache** — the last successful route per (shelter, origin on a ~200 m grid), last 500 kept; **(2) static matrix** — a route precomputed at startup (and after seed/reset) for every district centroid × every shelter with a 1.3 detour factor on distance/duration; the entry of the origin's nearest district is used (its polyline is re-anchored at the real origin, so distance/duration are estimates); **(3) straight line** (Haversine). `alternatives` is `[]` in offline mode. Closed roads, accessibility rules (`profile=special_needs`), shelter occupancy/status and reroute logic still apply because they come from the local database. UIs should show the `notice` (badge/banner) whenever `offline` is `true`.
+
+### K.4 Robustness
+- Any unexpected server exception returns HTTP 500 with the standard body `{"error":{"code":"INTERNAL_ERROR","message":"Internal server error"}}` (no stack trace or internals; CORS headers are still present; the details are logged server-side).
+- `GET /api/route` never returns 5xx because of the routing provider.
+- WebSocket handlers and broadcasts swallow and log exceptions; one broken client never affects others.
+
+---
+## L. Security & load hardening (additive, v1.5)
+No endpoint, field or event from A–K is removed or renamed. New behaviour only; clients should handle the new error responses below.
+
+### L.1 Response headers (every HTTP response, including errors)
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`. Responses under `/api/auth/*` also carry `Cache-Control: no-store`. Responses of at least 500 bytes are gzip-compressed when the client sends `Accept-Encoding: gzip` (browsers do this automatically).
+
+### L.2 New error responses (standard error body)
+| status | code | when | extra |
+|---|---|---|---|
+| 429 | `RATE_LIMITED` | more than `RATE_LIMIT_GLOBAL` (default **300**) requests per minute from one IP, on any endpoint | `Retry-After: <seconds>` |
+| 429 | `RATE_LIMITED` | existing limits unchanged: `POST /api/sos` 10/min per IP, `POST /api/auth/login` 10/min per IP | `Retry-After` |
+| 429 | `LOGIN_LOCKED` | **5 failed logins** for the same IP + username lock that pair out for **60 s**; the correct password is also refused while locked; a successful login resets the counter | `Retry-After: <seconds left>` |
+| 413 | `PAYLOAD_TOO_LARGE` | request body larger than **32 KB** (declared `Content-Length` or actual chunked size) | — |
+
+`Retry-After` is exposed to browsers via CORS. `422 VALIDATION_ERROR` is also returned for a login `username` longer than 64 or `password` longer than 256 characters. WebSocket connections are not counted by the global limit.
+
+### L.3 SOS `note` sanitization
+`POST /api/sos` still accepts `note` up to 200 characters, but the stored/broadcast value is sanitized: HTML tags (also unterminated ones) are removed, control and invisible format characters (incl. bidi overrides) are dropped, stray `<` `>` are removed, whitespace is collapsed and trimmed. So `"<b>Help</b>\u0000 me"` is stored as `"Help me"`. UIs should still render notes as plain text.
+
+### L.4 `GET /api/health`
+Adds `"state": "up"|"down"|"slow"|"http503"` — the exact provider simulation state (what `POST /api/sim/provider` last set). Full shape: `{"status":"ok","routingProvider":"up"|"down","breaker":"closed"|"open","degraded":false,"state":"up"}`. Dispatcher UIs can use it to restore the exact provider indicator after a page reload (previously `slow` and `http503` both showed as `down`).
+
+### L.5 Caching
+`GET /api/shelters`, `/api/roads` and `/api/districts` are cached in server memory for **2 s** (per `lang`) and invalidated immediately when any shelter, road or district row changes (sim endpoints, alert approve, reset, anything), so clients never see data older than the last change. Other endpoints are not cached.
+
+### L.6 Server configuration (env, no API impact)
+`JWT_SECRET` (set a random value ≥ 32 chars; the server logs a loud warning at startup while the built-in default is used), `RATE_LIMIT_GLOBAL` (300), `RATE_LIMIT_SOS` (10), `RATE_LIMIT_LOGIN` (10), `LOGIN_MAX_FAILURES` (5), `LOGIN_LOCK_SECONDS` (60), `MAX_BODY_BYTES` (32768), `CACHE_TTL` (2), `AUDIT_LOG` (default `backend/audit.log`). Rate limits and lockout are per client IP as seen by the server (behind a reverse proxy, forward the real client IP). Tokens and passwords are never logged. Role checks go only through the central `PERMISSIONS` table in `auth.py`.
+
+### L.7 Audit log
+`backend/audit.log` (git-ignored), one JSON object per line: `{"time","event","user","role","ip", ...}`. Events: `login.success`, `login.failure`, `login.locked`, `sos.create` (user = citizenId, role `citizen`, plus `sosId`), `alert.approve`, `alert.dismiss` (plus `alertId`), `sim.call` (plus `method`, `path`). For a failed login `user` is the attempted username and `role` is absent.
+
+### L.8 Database indexes
+`sos(status)`, `sos(created_at)`, `sos(citizen_id)`, `sos(status, created_at)`, `alert(status)`; created automatically at startup, also on an existing database.
+
+### L.9 Load test
+`python backend/tools/loadtest.py [--base-url http://127.0.0.1:8000] [--requests 200] [--no-sos]` fires N concurrent requests (60 % `GET /api/shelters`, 10 % `POST /api/sos`, 30 % `GET /api/route`) and prints p50/p95/max per endpoint and the status-code counts. `POST /api/sos` writes real rows (use `--no-sos` or the sim Reset afterwards); 429 counts as the limiter working, not as an error. Use `127.0.0.1`, not `localhost`, on Windows (the IPv6 fallback adds ~200 ms per new connection).

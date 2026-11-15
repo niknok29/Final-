@@ -2,12 +2,17 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["RATE_LIMIT_SOS"] = "1000"
+os.environ["RATE_LIMIT_GLOBAL"] = "100000"
+os.environ["RATE_LIMIT_LOGIN"] = "1000"
+import tempfile  # noqa: E402
+
+os.environ["AUDIT_LOG"] = os.path.join(tempfile.mkdtemp(), "audit.log")  # keep tests out of backend/audit.log
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session  # noqa: E402
 
-from app import auth, realtime, routing, util  # noqa: E402
+from app import auth, cache, realtime, routing, util  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.seed import seed  # noqa: E402
@@ -19,10 +24,14 @@ def client():
         with Session(engine) as s:
             seed(s)  # wipe + reseed so every test starts from the same state
         routing.set_state("up")
+        routing.clear_cache()
         realtime.hub.profiles.clear()
         realtime.hub.targets.clear()
         util.sos_limiter.reset()
         auth.login_limiter.reset()
+        auth.login_guard.reset()
+        util.global_limiter.reset()
+        cache.invalidate()
         yield c
 
 
