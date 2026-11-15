@@ -1,4 +1,5 @@
 import i18n from '../i18n/index.js'
+import { sanitizeUserNote } from '../utils/sanitize.js'
 import {
   mockApproveAlert,
   mockDismissAlert,
@@ -21,10 +22,12 @@ export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 let memorySession = null
 let onUnauthorizedCb = null
 let onRateLimitCb = null
+let onPayloadTooLargeCb = null
 
-export function setApiCallbacks({ onUnauthorized, onRateLimit }) {
+export function setApiCallbacks({ onUnauthorized, onRateLimit, onPayloadTooLarge }) {
   onUnauthorizedCb = onUnauthorized || null
   onRateLimitCb = onRateLimit || null
+  onPayloadTooLargeCb = onPayloadTooLarge || null
 }
 
 export function getStoredSession() {
@@ -103,6 +106,9 @@ async function apiFetch(path, options = {}) {
     if (timerId) clearTimeout(timerId)
   }
 
+  const rawRetryAfter = response.headers.get('Retry-After')
+  const parsedHeaderRetry = rawRetryAfter ? Number.parseInt(rawRetryAfter, 10) : NaN
+
   if (response.status === 401 || response.status === 403) {
     const isLoginEndpoint = path === '/api/auth/login'
     if (!isLoginEndpoint) {
@@ -116,14 +122,53 @@ async function apiFetch(path, options = {}) {
   }
 
   if (response.status === 429) {
-    const rawRetryAfter = response.headers.get('Retry-After')
-    const parsedRetry = rawRetryAfter ? Number.parseInt(rawRetryAfter, 10) : NaN
-    const retryAfter = Number.isFinite(parsedRetry) && parsedRetry > 0 ? parsedRetry : null
-    if (onRateLimitCb) onRateLimitCb(retryAfter)
-    const err = new Error('Rate limit exceeded')
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      // Non-JSON error body
+    }
+    const code = String(payload?.error?.code || payload?.code || 'RATE_LIMITED')
+    const message = String(
+      payload?.error?.message || payload?.detail || payload?.message || 'Rate limit exceeded'
+    )
+    const bodyRetryRaw = payload?.retryAfter ?? payload?.error?.retryAfter
+    const parsedBodyRetry = bodyRetryRaw != null ? Number.parseInt(String(bodyRetryRaw), 10) : NaN
+    const retryAfter =
+      Number.isFinite(parsedHeaderRetry) && parsedHeaderRetry > 0
+        ? parsedHeaderRetry
+        : Number.isFinite(parsedBodyRetry) && parsedBodyRetry > 0
+          ? parsedBodyRetry
+          : code === 'LOGIN_LOCKED'
+            ? 60
+            : null
+    if (onRateLimitCb) onRateLimitCb({ retryAfter, code, message, path })
+    const err = new Error(message)
     err.status = 429
-    err.code = 'RATE_LIMITED'
+    err.code = code
     err.retryAfter = retryAfter
+    throw err
+  }
+
+  if (response.status === 413) {
+    let payload = null
+    try {
+      payload = await response.json()
+    } catch {
+      // Non-JSON error body
+    }
+    const code = String(payload?.error?.code || payload?.code || 'PAYLOAD_TOO_LARGE')
+    const message = String(
+      payload?.error?.message ||
+        payload?.detail ||
+        payload?.message ||
+        'Request body exceeds 32 KB limit'
+    )
+    if (onPayloadTooLargeCb) onPayloadTooLargeCb({ code, message, path })
+    const err = new Error(message)
+    err.status = 413
+    err.code = code
+    err.retryAfter = null
     throw err
   }
 
@@ -146,6 +191,7 @@ async function apiFetch(path, options = {}) {
     const err = new Error(message)
     err.status = response.status
     err.code = code
+    err.retryAfter = Number.isFinite(parsedHeaderRetry) && parsedHeaderRetry > 0 ? parsedHeaderRetry : null
     throw err
   }
 
@@ -229,11 +275,18 @@ export async function simSetShelterOccupancy(shelterId, percent) {
   })
 }
 
-export async function simSosBurst({ lat, lng, count = 4, type = 'fire' }) {
-  if (USE_MOCK) return mockSimSosBurst({ lat, lng, count, type })
+export async function simSosBurst({ lat, lng, count = 4, type = 'fire', note = '' }) {
+  const cleanNote = sanitizeUserNote(note, 200)
+  if (USE_MOCK) return mockSimSosBurst({ lat, lng, count, type, note: cleanNote })
   return apiFetch('/api/sim/sos-burst', {
     method: 'POST',
-    body: JSON.stringify({ lat, lng, count, type }),
+    body: JSON.stringify({
+      lat,
+      lng,
+      count,
+      type,
+      ...(cleanNote ? { note: cleanNote } : {}),
+    }),
   })
 }
 

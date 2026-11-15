@@ -18,6 +18,10 @@
     "demoDispatcher": "Dispatcher: dispatcher / dispatcher123",
     "demoAdmin": "Admin: admin / admin123",
     "error401": "Invalid username or password.",
+    "errorLocked": "Too many failed login attempts (429 LOGIN_LOCKED). Try again in {{seconds}}s.",
+    "errorRateLimit": "Too many requests (429). Please wait {{seconds}}s before retrying.",
+    "errorPayloadTooLarge": "Request payload exceeds the 32 KB limit (413 PAYLOAD_TOO_LARGE).",
+    "lockedButton": "Locked ({{seconds}}s)",
     "errorGeneric": "Unable to sign in. Please try again."
   },
   "header": {
@@ -191,6 +195,7 @@
     "setOccupancy": "Set Occupancy",
     "burstSection": "SOS Cluster Burst (4 SOS)",
     "hazardType": "Hazard type",
+    "notePlaceholder": "Optional SOS note (max 200 chars)",
     "targetCoords": "Target: {{lat}}, {{lng}}",
     "sendBurst": "Send 4 SOS Burst",
     "providerSection": "Routing Provider",
@@ -209,6 +214,8 @@
     "noCrewAvailable": "No eligible crew (or accessible transport) is currently available.",
     "rateLimit": "Rate limit exceeded (429). Please wait a few seconds.",
     "rateLimitRetry": "Rate limit exceeded (429). Please retry in {{seconds}} seconds.",
+    "loginLocked": "Account temporarily locked after 5 failed attempts (LOGIN_LOCKED). Retry in {{seconds}}s.",
+    "payloadTooLarge": "Request rejected: payload exceeds 32 KB limit (413 PAYLOAD_TOO_LARGE).",
     "wsAuthExpired": "Session expired or rejected (WS 1008). Please sign in again.",
     "roadClosed": "Road closed: {{road}}",
     "roadOpened": "Road reopened: {{road}}",

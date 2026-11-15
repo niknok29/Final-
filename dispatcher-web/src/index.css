@@ -1707,6 +1707,36 @@ select {
   font-family: ui-monospace, Consolas, monospace;
 }
 
+.sim-note-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-note-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-root);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.sim-note-input:focus {
+  border-color: var(--blue);
+}
+
+.sim-char-counter {
+  font-size: 10.5px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .sim-btn {
   border: none;
   border-radius: 6px;

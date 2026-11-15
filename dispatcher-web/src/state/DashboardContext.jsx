@@ -89,7 +89,10 @@ function sortSosByPriorityAndTime(items) {
 
 function applyProviderTelemetry(state, payload) {
   if (!payload || typeof payload !== 'object') return state
-  const rawProvider = payload.state || payload.routingProvider
+  const explicitState = ['up', 'down', 'slow', 'http503'].includes(payload.state)
+    ? payload.state
+    : null
+  const rawProvider = explicitState || payload.routingProvider
   const rawStatus = payload.status
   const rawDegraded =
     typeof payload.degraded === 'boolean' ? payload.degraded : rawStatus === 'degraded'
@@ -118,7 +121,9 @@ function applyProviderTelemetry(state, payload) {
     rawBreaker === 'open' || rawBreaker === 'closed' ? rawBreaker : state.routingBreaker
 
   let nextProvider = state.routingProvider || 'up'
-  if (rawProvider === 'http503' || rawProvider === 'slow' || rawProvider === 'degraded') {
+  if (explicitState) {
+    nextProvider = explicitState
+  } else if (rawProvider === 'http503' || rawProvider === 'slow' || rawProvider === 'degraded') {
     nextProvider = rawProvider
   } else if (rawProvider === 'down') {
     if (state.routingProvider === 'http503') {
@@ -136,7 +141,7 @@ function applyProviderTelemetry(state, payload) {
 
   const nextDegraded =
     typeof payload.degraded === 'boolean'
-      ? payload.degraded
+      ? payload.degraded || nextProvider !== 'up' || nextBreaker === 'open'
       : rawStatus === 'degraded' ||
         nextProvider !== 'up' ||
         nextBreaker === 'open' ||
@@ -420,12 +425,19 @@ export function DashboardProvider({ children }) {
       onUnauthorized: () => {
         dispatch({ type: 'LOGOUT' })
       },
-      onRateLimit: (retryAfter) => {
-        if (retryAfter) {
+      onRateLimit: (info) => {
+        const retryAfter = typeof info === 'object' ? info?.retryAfter : info
+        const code = typeof info === 'object' ? info?.code : 'RATE_LIMITED'
+        if (code === 'LOGIN_LOCKED') {
+          addToast(t('toast.loginLocked', { seconds: retryAfter || 60 }), 'error')
+        } else if (retryAfter) {
           addToast(t('toast.rateLimitRetry', { seconds: retryAfter }), 'warning')
         } else {
           addToast(t('toast.rateLimit'), 'warning')
         }
+      },
+      onPayloadTooLarge: () => {
+        addToast(t('toast.payloadTooLarge'), 'error')
       },
     })
   }, [addToast, t])
@@ -570,7 +582,13 @@ export function DashboardProvider({ children }) {
           await loadSnapshotAndHealth()
         } else if (err?.code === 'NO_CREW_AVAILABLE') {
           addToast(t('toast.noCrewAvailable'), 'error')
-        } else if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
+        } else if (
+          err?.status !== 429 &&
+          err?.status !== 413 &&
+          err?.code !== 'PAYLOAD_TOO_LARGE' &&
+          err?.status !== 401 &&
+          err?.status !== 403
+        ) {
           addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
@@ -595,7 +613,13 @@ export function DashboardProvider({ children }) {
         if (err?.code === 'ALERT_NOT_PENDING') {
           addToast(t('toast.alertNotPending'), 'warning')
           await loadSnapshotAndHealth()
-        } else if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
+        } else if (
+          err?.status !== 429 &&
+          err?.status !== 413 &&
+          err?.code !== 'PAYLOAD_TOO_LARGE' &&
+          err?.status !== 401 &&
+          err?.status !== 403
+        ) {
           addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
@@ -617,7 +641,9 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.roadClosed', { road: road.name }), 'warning')
       } catch (err) {
-        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+          addToast(t('toast.actionError'), 'error')
+        }
       }
     },
     [addToast, loadSnapshotAndHealth, t]
@@ -635,7 +661,9 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.roadOpened', { road: road.name }), 'success')
       } catch (err) {
-        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+          addToast(t('toast.actionError'), 'error')
+        }
       }
     },
     [addToast, loadSnapshotAndHealth, t]
@@ -653,23 +681,27 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.shelterUpdated', { shelter: shelter.name, percent }), 'info')
       } catch (err) {
-        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+          addToast(t('toast.actionError'), 'error')
+        }
       }
     },
     [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleSimSosBurst = useCallback(
-    async ({ lat, lng, type = 'fire' }) => {
+    async ({ lat, lng, type = 'fire', note = '' }) => {
       try {
-        await simSosBurst({ lat, lng, count: 4, type })
+        await simSosBurst({ lat, lng, count: 4, type, note })
         dispatch({
           type: 'SET_MAP_FOCUS',
           payload: { lat, lng, zoom: 15 },
         })
         addToast(t('toast.sosBurstSent'), 'warning')
       } catch (err) {
-        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+          addToast(t('toast.actionError'), 'error')
+        }
       }
     },
     [addToast, t]
@@ -713,7 +745,9 @@ export function DashboardProvider({ children }) {
         })
         addToast(t('toast.providerUpdated', { state: nextState.toUpperCase() }), 'info')
       } catch (err) {
-        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+          addToast(t('toast.actionError'), 'error')
+        }
       }
     },
     [addToast, state.routingBreaker, t]
@@ -745,7 +779,9 @@ export function DashboardProvider({ children }) {
       }
       addToast(t('toast.simReset'), 'success')
     } catch (err) {
-      if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+      if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        addToast(t('toast.actionError'), 'error')
+      }
     }
   }, [loadSnapshotAndHealth, addToast, t])
 

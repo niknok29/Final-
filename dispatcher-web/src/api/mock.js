@@ -1,4 +1,5 @@
 import { calculateDistanceMeters, calculatePathLengthMeters } from '../utils/geo.js'
+import { sanitizeUserNote } from '../utils/sanitize.js'
 
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
@@ -533,6 +534,8 @@ let autoFeedIndex = 0
 const subscribers = new Set()
 let sosIntervalId = null
 let alertTimeoutId = null
+const mockLoginFailures = new Map()
+const mockLoginLockedUntil = new Map()
 
 const STREAM_SOS_TEMPLATES = [
   {
@@ -818,7 +821,25 @@ export function subscribeMockEvents(callback) {
 
 export async function mockLogin(username, password) {
   await new Promise((r) => setTimeout(r, 180))
+  const key = String(username || '').toLowerCase()
+  const now = Date.now()
+  const lockedUntil = mockLoginLockedUntil.get(key)
+  if (lockedUntil && lockedUntil > now) {
+    const retryAfter = Math.max(1, Math.ceil((lockedUntil - now) / 1000))
+    const err = new Error('Too many failed logins, try again later')
+    err.status = 429
+    err.code = 'LOGIN_LOCKED'
+    err.retryAfter = retryAfter
+    throw err
+  }
+  if (lockedUntil && lockedUntil <= now) {
+    mockLoginLockedUntil.delete(key)
+    mockLoginFailures.delete(key)
+  }
+
   if (username === 'dispatcher' && password === 'dispatcher123') {
+    mockLoginFailures.delete(key)
+    mockLoginLockedUntil.delete(key)
     return {
       token: 'mock-jwt-dispatcher-2026',
       role: 'dispatcher',
@@ -827,6 +848,8 @@ export async function mockLogin(username, password) {
     }
   }
   if (username === 'admin' && password === 'admin123') {
+    mockLoginFailures.delete(key)
+    mockLoginLockedUntil.delete(key)
     return {
       token: 'mock-jwt-admin-2026',
       role: 'admin',
@@ -834,6 +857,15 @@ export async function mockLogin(username, password) {
       expiresIn: 3600,
     }
   }
+
+  const windowStart = now - 60000
+  const recent = (mockLoginFailures.get(key) || []).filter((ts) => ts > windowStart)
+  recent.push(now)
+  mockLoginFailures.set(key, recent)
+  if (recent.length >= 5) {
+    mockLoginLockedUntil.set(key, now + 60000)
+  }
+
   const err = new Error('Invalid credentials')
   err.status = 401
   err.code = 'INVALID_CREDENTIALS'
@@ -1054,8 +1086,9 @@ export async function mockSimSetShelterOccupancy(shelterId, percent) {
   return clone(shelter)
 }
 
-export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire' }) {
+export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire', note = '' }) {
   const zone = findNearestZone(lat, lng)
+  const cleanNote = sanitizeUserNote(note, 200)
   const created = []
   for (let i = 0; i < count; i += 1) {
     const item = {
@@ -1069,7 +1102,7 @@ export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire' }) {
       lng: Number((lng + (Math.random() - 0.5) * 0.0025).toFixed(5)),
       zoneId: zone.id,
       zoneName: zone.name,
-      note: `Simulyasiya kütləvi siqnalı #${i + 1} (${zone.name})`,
+      note: cleanNote || `Simulyasiya kütləvi siqnalı #${i + 1} (${zone.name})`,
       status: 'active',
       createdAt: new Date().toISOString(),
     }
@@ -1136,6 +1169,8 @@ export async function mockSimReset() {
   providerState = 'up'
   breakerState = 'closed'
   fallbackModeState = null
+  mockLoginFailures.clear()
+  mockLoginLockedUntil.clear()
   sosSeq = 107
   alertSeq = 2
   autoFeedIndex = 0

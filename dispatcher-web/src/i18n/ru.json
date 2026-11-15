@@ -18,6 +18,10 @@
     "demoDispatcher": "Диспетчер: dispatcher / dispatcher123",
     "demoAdmin": "Админ: admin / admin123",
     "error401": "Неверное имя пользователя или пароль.",
+    "errorLocked": "Слишком много неудачных попыток входа (429 LOGIN_LOCKED). Повторите через {{seconds}} сек.",
+    "errorRateLimit": "Слишком много запросов (429). Подождите {{seconds}} сек. перед повтором.",
+    "errorPayloadTooLarge": "Размер запроса превышает лимит 32 КБ (413 PAYLOAD_TOO_LARGE).",
+    "lockedButton": "Блокировка ({{seconds}}с)",
     "errorGeneric": "Ошибка входа. Попробуйте еще раз."
   },
   "header": {
@@ -191,6 +195,7 @@
     "setOccupancy": "Применить",
     "burstSection": "Всплеск SOS (4 сигнала)",
     "hazardType": "Тип инцидента",
+    "notePlaceholder": "Заметка SOS (макс. 200 симв.)",
     "targetCoords": "Координаты: {{lat}}, {{lng}}",
     "sendBurst": "Отправить 4 SOS",
     "providerSection": "Провайдер маршрутизации",
@@ -209,6 +214,8 @@
     "noCrewAvailable": "Нет доступной бригады (или доступного транспорта).",
     "rateLimit": "Превышен лимит запросов (429). Подождите несколько секунд.",
     "rateLimitRetry": "Превышен лимит запросов (429). Повторите через {{seconds}} сек.",
+    "loginLocked": "Вход временно заблокирован после 5 неудачных попыток (LOGIN_LOCKED). Повторите через {{seconds}} сек.",
+    "payloadTooLarge": "Запрос отклонен: превышен лимит 32 КБ (413 PAYLOAD_TOO_LARGE).",
     "wsAuthExpired": "Сессия истекла или отклонена (WS 1008). Войдите снова.",
     "roadClosed": "Дорога закрыта: {{road}}",
     "roadOpened": "Дорога открыта: {{road}}",

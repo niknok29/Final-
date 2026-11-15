@@ -94,13 +94,15 @@
 - **Token & WebSocket `1008` Handling:**
   - JWTs and user metadata are stored exclusively in `sessionStorage` and in-memory state — never `localStorage`.
   - HTTP `401`/`403` and WebSocket close code `1008` (invalid/expired token or missing permission) immediately clear `sessionStorage`, halt reconnect loops, and redirect to `LoginPage`.
-- **Conflict & Rate Limit Error Codes:**
+- **Conflict, Rate Limit & Hardening Error Codes (Contract Section L):**
   - `ALERT_NOT_PENDING` (`409`): displays a warning toast and triggers snapshot resync.
   - `NO_CREW_AVAILABLE` (`409`): notifies dispatchers that no eligible crew (or accessible transport unit) is free.
-  - `RATE_LIMITED` (`429`): respects the `Retry-After` response header when provided, displaying a non-blocking warning toast with retry timing.
-- **XSS Prevention:**
+  - `LOGIN_LOCKED` (`429`): triggered after 5 failed login attempts for an IP + username pair within 60 seconds; `apiFetch` parses `Retry-After` (defaulting to `60`s if absent) and JSON `error.code`, triggering a localized lockout error alert, live countdown lock on `LoginPage`, and error toast notification.
+  - `RATE_LIMITED` (`429`): enforces global (`300 req/min` per IP) and per-route rate limits; parses `Retry-After` header / body metadata and displays a localized warning toast with retry wait time.
+  - `PAYLOAD_TOO_LARGE` (`413`): rejects request bodies exceeding `32 KB` with a localized error toast notification (`toast.payloadTooLarge`) and alert message.
+- **XSS Prevention & SOS Note Hardening (`maxLength="200"`):**
   - `dangerouslySetInnerHTML` is strictly forbidden across the codebase.
-  - All user-supplied notes pass through `sanitizeUserNote()` before JSX interpolation; Leaflet `divIcon` HTML contains only internal enums, `♿` indicators, and numeric percentages.
+  - All user-supplied notes pass through `sanitizeUserNote()` before JSX interpolation; interactive SOS note inputs (`SimulationDrawer.jsx`) enforce `maxLength={200}` with a live `length / 200` counter and `sanitizeSosNoteInput()` strips HTML tags, control/invisible format characters, and angle brackets (`<`, `>`) before submission. Leaflet `divIcon` HTML contains only internal enums, `♿` indicators, and numeric percentages.
 - **Dynamic i18n (`AZ` / `EN` / `RU`):**
   - Switching language updates `<html lang="...">`, persists in `sessionStorage`, appends `?lang=` and `&lang=` to backend GET/WS requests, and formats numbers/timestamps via `Intl.NumberFormat` and `Intl.DateTimeFormat`.
 
@@ -113,7 +115,7 @@
   - `apiFetch` wraps all requests in an 8-second `AbortController` timeout so simulated `>5s` upstream latency never stalls or crashes the UI.
   - `simSetProvider(state)` sends `"up" | "down" | "slow" | "http503"` to `POST /api/sim/provider` and automatically falls back from `"http503"` to `{"state": "down"}` on HTTP `400`/`422` if running against a pre-Section-K backend.
 - **Health Initialization & Live Telemetry (`GET /api/health` + `WS provider.updated`):**
-  - On initial load, 20-second polling, and WebSocket reconnect (`onReconnectResync`), `getHealth()` / `provider.updated` normalize `{ status: "ok", routingProvider: "up" | "down" | "slow" | "http503", breaker: "closed" | "open", degraded: boolean, offline?: boolean, fallbackMode?: null | "cache" | "static_matrix" | "straight_line", notice?: null | { code: "OFFLINE_BACKUP_ROUTE_MODE", message } }` defensively in `DashboardContext`.
+  - On initial load, 20-second polling, and WebSocket reconnect (`onReconnectResync`), `getHealth()` / `provider.updated` normalize `{ status: "ok", state: "up" | "down" | "slow" | "http503", routingProvider: "up" | "down" | "slow" | "http503", breaker: "closed" | "open", degraded: boolean, offline?: boolean, fallbackMode?: null | "cache" | "static_matrix" | "straight_line", notice?: null | { code: "OFFLINE_BACKUP_ROUTE_MODE", message } }` in `DashboardContext`. `health.state` takes precedence when present so page reloads (`F5`) accurately restore `UP`, `SLOW`, `DOWN`, and `HTTP 503` Header status pills and the yellow Section K offline/backup route banner.
 - **Backend Circuit Breaker & Fallback Modes (`backend/app/routing.py`):**
   - Supports `MockProvider` (default) or `OsrmProvider` (`ROUTING_PROVIDER=osrm`, optional `MOCK_ROUTING_DOWN=1`).
   - `CircuitBreaker` trips on repeated failures/timeouts, falling back safely across `cache`, `static_matrix`, or Haversine `straight_line` strategies without blocking dispatchers.

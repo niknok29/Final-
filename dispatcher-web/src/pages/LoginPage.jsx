@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { USE_MOCK } from '../api/client.js'
+import { ToastContainer } from '../components/ToastContainer.jsx'
 import { useDashboard } from '../state/dashboardStore.js'
 
 const LANGUAGES = ['az', 'en', 'ru']
@@ -13,16 +14,34 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [lockoutSeconds, setLockoutSeconds] = useState(0)
+  const [lockoutKind, setLockoutKind] = useState(null)
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return undefined
+    const timer = setTimeout(() => {
+      setLockoutSeconds((prev) => Math.max(0, prev - 1))
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [lockoutSeconds])
 
   async function onSubmit(e) {
     e.preventDefault()
+    if (lockoutSeconds > 0) return
     setError('')
+    setLockoutKind(null)
     setSubmitting(true)
     try {
       await handleLogin(username.trim(), password)
     } catch (err) {
       if (err?.status === 401) {
         setError(t('login.error401'))
+      } else if (err?.status === 429) {
+        const waitSec = err?.retryAfter && err.retryAfter > 0 ? err.retryAfter : 60
+        setLockoutKind(err?.code === 'LOGIN_LOCKED' ? 'locked' : 'ratelimit')
+        setLockoutSeconds(waitSec)
+      } else if (err?.status === 413 || err?.code === 'PAYLOAD_TOO_LARGE') {
+        setError(t('login.errorPayloadTooLarge'))
       } else {
         setError(t('login.errorGeneric'))
       }
@@ -35,7 +54,16 @@ export function LoginPage() {
     setUsername(u)
     setPassword(p)
     setError('')
+    setLockoutSeconds(0)
+    setLockoutKind(null)
   }
+
+  const displayedError =
+    lockoutSeconds > 0
+      ? lockoutKind === 'locked'
+        ? t('login.errorLocked', { seconds: lockoutSeconds })
+        : t('login.errorRateLimit', { seconds: lockoutSeconds })
+      : error
 
   return (
     <div className="login-page">
@@ -71,6 +99,7 @@ export function LoginPage() {
               id="login-username"
               type="text"
               autoComplete="username"
+              maxLength={64}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder={t('login.usernamePlaceholder')}
@@ -84,6 +113,7 @@ export function LoginPage() {
               id="login-password"
               type="password"
               autoComplete="current-password"
+              maxLength={256}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('login.passwordPlaceholder')}
@@ -91,14 +121,22 @@ export function LoginPage() {
             />
           </div>
 
-          {error && (
+          {displayedError && (
             <div className="login-error" role="alert">
-              {error}
+              {displayedError}
             </div>
           )}
 
-          <button type="submit" className="login-submit-btn" disabled={submitting}>
-            {submitting ? t('login.submitting') : t('login.submit')}
+          <button
+            type="submit"
+            className="login-submit-btn"
+            disabled={submitting || lockoutSeconds > 0}
+          >
+            {submitting
+              ? t('login.submitting')
+              : lockoutSeconds > 0
+                ? t('login.lockedButton', { seconds: lockoutSeconds })
+                : t('login.submit')}
           </button>
         </form>
 
@@ -122,6 +160,7 @@ export function LoginPage() {
           </div>
         </div>
       </div>
+      <ToastContainer />
     </div>
   )
 }

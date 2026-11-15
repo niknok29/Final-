@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { can } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
-import { sanitizeUserNote } from '../utils/sanitize.js'
+import { sanitizeSosNoteInput, sanitizeUserNote } from '../utils/sanitize.js'
 
 const HAZARD_TYPES = ['fire', 'collapse', 'flood', 'medical']
 
@@ -28,6 +28,7 @@ export function SimulationDrawer() {
   const [selectedShelterId, setSelectedShelterId] = useState('')
   const [occupancyPercent, setOccupancyPercent] = useState(96)
   const [burstType, setBurstType] = useState('fire')
+  const [burstNote, setBurstNote] = useState('')
 
   if (!can(user?.role, 'simulate') || !simDrawerOpen) {
     return null
@@ -155,11 +156,24 @@ export function SimulationDrawer() {
                   lat: simTargetCoords.lat,
                   lng: simTargetCoords.lng,
                   type: burstType,
+                  note: sanitizeSosNoteInput(burstNote, 200).trim(),
                 })
               }
             >
               {t('sim.sendBurst')}
             </button>
+          </div>
+          <div className="sim-note-row">
+            <input
+              type="text"
+              className="sim-note-input"
+              maxLength={200}
+              value={burstNote}
+              onChange={(e) => setBurstNote(sanitizeSosNoteInput(e.target.value, 200))}
+              placeholder={t('sim.notePlaceholder')}
+              aria-label={t('sim.notePlaceholder')}
+            />
+            <span className="sim-char-counter">{burstNote.length} / 200</span>
           </div>
           <span className="sim-coords-hint">
             {t('sim.targetCoords', {
