@@ -6,3 +6,6 @@ __pycache__/
 dist/
 
 audit.log
+*.db-wal
+*.db-shm
+*.db-journal

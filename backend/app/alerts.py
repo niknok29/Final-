@@ -1,4 +1,5 @@
 """Crisis algorithm: SOS_CLUSTER / SHELTER_OVERLOAD detection, proposals, approve/dismiss."""
+import math
 import secrets
 from datetime import timedelta, timezone
 
@@ -62,10 +63,12 @@ def _details(**kw) -> dict:
 def check_sos(s: Session, x: Sos) -> Alert | None:
     """>= 4 distinct citizens with active SOS within 500 m of `x` during the last 5 minutes."""
     cutoff = now() - timedelta(minutes=WINDOW_MIN)
-    near = [
-        y for y in s.exec(select(Sos).where(Sos.status == "active")).all()
-        if _aware(y.created_at) >= cutoff and haversine(x.lat, x.lng, y.lat, y.lng) <= RADIUS_M
-    ]
+    dlat = RADIUS_M / 111320  # bounding box first: the DB narrows to a handful of rows instead of loading every SOS
+    dlng = dlat / max(0.2, math.cos(math.radians(x.lat)))
+    candidates = s.exec(select(Sos).where(
+        Sos.status == "active", Sos.trust == "normal", Sos.created_at >= cutoff,  # quarantined SOS never count
+        Sos.lat >= x.lat - dlat, Sos.lat <= x.lat + dlat, Sos.lng >= x.lng - dlng, Sos.lng <= x.lng + dlng)).all()
+    near = [y for y in candidates if haversine(x.lat, x.lng, y.lat, y.lng) <= RADIUS_M]
     citizens = {y.citizen_id for y in near}
     if len(citizens) < MIN_CITIZENS:
         return None
@@ -98,14 +101,22 @@ def check_priority(s: Session, x: Sos) -> Alert | None:
 
 
 def submit_sos(s: Session, citizen_id: str, type_: str, lat: float, lng: float, note: str = "",
-               profile: str | None = None) -> Sos:
+               profile: str | None = None, *, trust: str = "normal", ip_hash: str = "", sos_id: str | None = None,
+               created_at=None) -> Sos:
+    """Single insert, then events AFTER the commit. A "suspicious" (quarantined) SOS is stored and nothing else:
+    no WS event, no alert engine, no zone update."""
     profile = profile or realtime.hub.profiles.get(citizen_id, "standard")
-    realtime.hub.profiles[citizen_id] = profile
+    if trust == "normal":  # a quarantined flood must not grow the in-memory profile map
+        realtime.hub.profiles[citizen_id] = profile
     priority, rank = services.PRIORITY[profile]
-    x = Sos(id="sos_" + secrets.token_hex(4), citizen_id=citizen_id, type=type_, lat=lat, lng=lng, note=note,
-            zone_id=services.nearest_district(s, lat, lng).id, profile=profile, priority=priority, priority_rank=rank)
+    x = Sos(id=sos_id or "sos_" + secrets.token_hex(4), citizen_id=citizen_id, type=type_, lat=lat, lng=lng, note=note,
+            zone_id=services.nearest_zone_id(s, lat, lng), profile=profile, priority=priority, priority_rank=rank,
+            trust=trust, ip_hash=ip_hash, **({"created_at": created_at} if created_at else {}))
+    s.expire_on_commit = False  # the committed row is used as-is below: no refresh SELECT per attribute access
     s.add(x)
     s.commit()
+    if trust != "normal":
+        return x
     realtime.sos_created(s, x)
     check_priority(s, x)
     check_sos(s, x)

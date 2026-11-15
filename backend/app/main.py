@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -9,13 +10,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import auth, dispatch, realtime, sim
+from . import auth, dispatch, intake, realtime, sim
 from .api import router
 from .db import init_db
 from .security import SecurityMiddleware
 from .util import ApiError
 
 log = logging.getLogger("crisis")
+sys.setswitchinterval(0.001)  # default 5 ms: the event loop would wait that long for the GIL behind a busy worker thread
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -24,19 +26,10 @@ async def lifespan(_: FastAPI):
     realtime.hub.loop = asyncio.get_running_loop()
     yield
     realtime.hub.loop = None
+    intake.flush()
 
 
 app = FastAPI(title="Crisis Evac Engine", lifespan=lifespan)
-
-
-@app.middleware("http")
-async def _catch_all(request: Request, call_next):
-    """Registered BEFORE the CORS middleware, so it sits inside it: unexpected errors still get CORS headers
-    and the standard error JSON (no stack trace in the body)."""
-    try:
-        return await call_next(request)
-    except Exception:
-        return _internal(request)
 
 
 # add_middleware: the LAST one added is the OUTERMOST. Request path: gzip -> CORS -> security -> catch-all -> app,
@@ -47,7 +40,7 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After"],
 )
-app.add_middleware(GZipMiddleware, minimum_size=500)
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=4)
 for r in (router, auth.router, dispatch.router, sim.router, realtime.router):
     app.include_router(r)
 

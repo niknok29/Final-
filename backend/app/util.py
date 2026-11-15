@@ -35,7 +35,7 @@ def norm_lang(lang: str) -> str:
     return lang if lang in LANGS else "az"
 
 
-def get_lang(lang: str = Query("az")) -> str:
+async def get_lang(lang: str = Query("az")) -> str:  # async: runs inline, a sync dependency costs a thread hop
     return norm_lang(lang)
 
 
@@ -49,6 +49,7 @@ class RateLimiter:
     def __init__(self, limit: int, window: int):
         self.limit, self.window, self.hits = limit, window, defaultdict(deque)
         self._lock = threading.Lock()
+        self._pruned_at = 0.0
 
     def check(self, key: str) -> int:
         """Record a hit; returns 0 if allowed, else the seconds until the client may retry."""
@@ -60,7 +61,8 @@ class RateLimiter:
             if len(q) >= self.limit:
                 return max(1, int(self.window - (t - q[0])) + 1)
             q.append(t)
-            if len(self.hits) > 10000:  # bound memory under a many-IP flood: drop idle clients
+            if len(self.hits) > 10000 and t - self._pruned_at > 5:  # bound memory under a many-key flood (scan <= 1 / 5 s)
+                self._pruned_at = t
                 for k in [k for k, d in self.hits.items() if not d or t - d[-1] > self.window]:
                     self.hits.pop(k, None)
         return 0

@@ -107,7 +107,7 @@ def test_approve_flow_via_api(client, headers):
     with client.websocket_connect("/ws/dispatcher?token=" + headers["Authorization"].split()[1]) as ws:
         for i in range(4):
             assert client.post("/api/sos", json={"citizenId": str(uuid.uuid4()), "type": "fire",
-                                                 "lat": LAT + i * 0.0003, "lng": LNG}).status_code == 201
+                                                 "lat": LAT + i * 0.001, "lng": LNG}).status_code == 201
         created = None
         for _ in range(20):
             m = ws.receive_json()
