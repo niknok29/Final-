@@ -1,4 +1,5 @@
 import json
+import uuid
 
 from sqlalchemy import inspect
 from sqlmodel import Session
@@ -95,7 +96,9 @@ def test_global_rate_limit_429(client, monkeypatch):
 def test_sos_limit_still_applies(client, monkeypatch):
     monkeypatch.setattr(util.sos_limiter, "limit", 2)
     util.sos_limiter.reset()
-    assert [client.post("/api/sos", json=SOS).status_code for _ in range(3)] == [201, 201, 429]
+    codes = [client.post("/api/sos", json={**SOS, "citizenId": str(uuid.uuid4()), "lat": 40.3 + i * 0.01}).status_code
+             for i in range(3)]  # different citizen + place each time: not duplicates
+    assert codes == [201, 201, 429]
 
 
 def test_login_limit_still_applies(client, monkeypatch):
@@ -184,10 +187,12 @@ def test_health_has_state(client, headers):
 
 # ---- audit ------------------------------------------------------------------------------------------------------
 def _audit_rows():
+    audit.flush()
     return [json.loads(line) for line in audit.path().read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def test_audit_trail_and_no_secrets(client):
+    audit.flush()
     audit.path().write_text("")
     _login(client)
     tok = _login(client, pw="dispatcher123").json()["token"]
@@ -207,11 +212,13 @@ def test_audit_trail_and_no_secrets(client):
         assert r["time"] and "ip" in r and "user" in r and "role" in r
     ok = next(r for r in rows if r["event"] == "login.success")
     assert ok["user"] == "dispatcher" and ok["role"] == "dispatcher"
+    audit.flush()
     blob = audit.path().read_text(encoding="utf-8")
     assert tok not in blob and "dispatcher123" not in blob and "Bearer" not in blob
 
 
 def test_audit_records_lockout(client):
+    audit.flush()
     audit.path().write_text("")
     for _ in range(6):
         _login(client)

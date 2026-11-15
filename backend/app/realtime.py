@@ -1,12 +1,14 @@
 """WebSocket hubs + thread-safe emit helpers (callable from sync handlers)."""
 import asyncio
 import logging
+import threading
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlmodel import Session
 
-from . import routing, services
+from . import flood, routing, services
 from .auth import can, decode
 from .db import engine
 from .models import District, now
@@ -72,18 +74,70 @@ def to_all(type_: str, data: dict):
 
 # ---- domain events (call after the DB commit, with the session still open) ----
 def sos_created(s: Session, x):
+    if x.trust != "normal" or not hub.dispatchers:  # quarantined SOS are invisible; nobody listening = no work
+        return
     to_dispatchers("sos.created", by_lang(lambda l: sos_out(x)))
     zone_updated(s, x.zone_id)
 
 
 def sos_updated(s: Session, x):
+    if x.trust != "normal" or not hub.dispatchers:
+        return
     to_dispatchers("sos.updated", by_lang(lambda l: sos_out(x)))
     zone_updated(s, x.zone_id)
 
 
-def zone_updated(s: Session, zone_id: str):
+ZONE_EVERY = 1.0  # seconds: under flood zone.updated is coalesced to at most one per zone per interval
+_zone_lock = threading.Lock()
+_zone_last: dict[str, float] = {}
+_zone_pending: set[str] = set()
+_zone_timer: threading.Timer | None = None
+
+
+def _send_zone(s: Session, zone_id: str):
     d = s.get(District, zone_id)
-    to_dispatchers("zone.updated", by_lang(lambda l: services.zone_out(s, d, l)))
+    if d:
+        to_dispatchers("zone.updated", by_lang(lambda l: services.zone_out(s, d, l)))
+
+
+def _flush_zones():
+    global _zone_timer
+    with _zone_lock:
+        zones = list(_zone_pending)
+        _zone_pending.clear()
+        _zone_timer = None
+        t = time.monotonic()
+        for z in zones:
+            _zone_last[z] = t
+    if zones and hub.dispatchers:
+        with Session(engine) as s:
+            for z in zones:
+                try:
+                    _send_zone(s, z)
+                except Exception:
+                    log.exception("coalesced zone update failed for %s", z)
+
+
+def zone_updated(s: Session, zone_id: str):
+    global _zone_timer
+    if not hub.dispatchers:
+        return
+    if not flood.active():
+        return _send_zone(s, zone_id)
+    with _zone_lock:
+        t = time.monotonic()
+        if t - _zone_last.get(zone_id, 0.0) >= ZONE_EVERY:
+            _zone_last[zone_id] = t
+            send = True
+        else:
+            send = False
+            _zone_pending.add(zone_id)  # the trailing flush sends the latest state of this zone
+            if _zone_timer is None:
+                _zone_timer = threading.Timer(ZONE_EVERY, _flush_zones)
+                _zone_timer.daemon = True
+                _zone_timer.start()
+    if send:
+        _send_zone(s, zone_id)
 
 
 def crew_updated(c):
@@ -164,7 +218,7 @@ async def ws_citizen(ws: WebSocket, citizenId: str = "", lang: str = "az"):
 @router.websocket("/ws/dispatcher")
 async def ws_dispatcher(ws: WebSocket, token: str = "", lang: str = "az"):
     claims = decode(token)
-    if not claims or not can(claims.get("role", ""), "dispatch"):
+    if not claims or not can(claims["role"], "view"):
         return await _reject(ws)
     await ws.accept()
     hub.dispatchers[ws] = norm_lang(lang)

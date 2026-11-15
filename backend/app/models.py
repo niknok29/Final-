@@ -78,6 +78,8 @@ class Sos(SQLModel, table=True):
     profile: str = "standard"  # standard | special_needs
     priority: str = "normal"  # critical | normal
     priority_rank: int = 2  # 1 = critical, 2 = normal
+    trust: str = Field("normal", index=True)  # normal | suspicious (quarantined during an SOS flood)
+    ip_hash: str = ""  # salted hash of the sender IP (the raw IP is never stored)
     created_at: datetime = Field(default_factory=now, index=True)
 
 

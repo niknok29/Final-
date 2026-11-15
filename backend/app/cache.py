@@ -20,7 +20,18 @@ _store: dict[tuple, tuple[float, object]] = {}
 stats = {"hits": 0, "misses": 0}
 
 
-def get_or_set(key: tuple, producer):
+def peek(key: tuple):
+    """Cached value or None; cheap enough to call on the event loop (no DB, no thread hop)."""
+    now = time.monotonic()
+    with _lock:
+        hit = _store.get(key)
+        if hit and hit[0] > now:
+            stats["hits"] += 1
+            return hit[1]
+    return None
+
+
+def get_or_set(key: tuple, producer, store_if=lambda _v: True):
     now = time.monotonic()
     with _lock:
         hit = _store.get(key)
@@ -28,6 +39,8 @@ def get_or_set(key: tuple, producer):
             stats["hits"] += 1
             return hit[1]
     value = producer()  # computed outside the lock: slow DB work must not serialize other requests
+    if not store_if(value):
+        return value
     with _lock:
         _store[key] = (time.monotonic() + TTL, value)
         stats["misses"] += 1

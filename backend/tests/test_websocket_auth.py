@@ -9,7 +9,9 @@ from app import auth, realtime
 
 
 def make_token(role="dispatcher", exp_in=3600):
-    return jwt.encode({"sub": "t", "role": role, "exp": int(time.time()) + exp_in}, auth.SECRET, algorithm="HS256")
+    t = int(time.time())
+    claims = {"sub": "t", "role": role, "iat": t - 5, "exp": t + exp_in, "iss": auth.ISSUER, "aud": auth.AUDIENCE}
+    return jwt.encode(claims, auth.SECRET, algorithm="HS256")
 
 
 def assert_closed_1008(client, url):

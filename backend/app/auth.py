@@ -40,10 +40,21 @@ warn_secret()
 USERS = {"dispatcher": ("dispatcher123", "dispatcher"), "admin": ("admin123", "admin")}
 
 # Single place for role checks: role -> permissions. Add new roles here only.
-PERMISSIONS = {
-    "dispatcher": {"dispatch", "simulate"},
-    "admin": {"dispatch", "simulate", "admin"},
+#   view     read dashboards / SOS / crews / alerts        dispatch  approve / dismiss alerts, purge quarantined SOS
+#   simulate drive the demo simulator (/api/sim/*)
+# SIM_ROLES (env, default "dispatcher,admin") lists the roles that additionally get "simulate": the dispatcher UI
+# has a simulation drawer, so dispatchers keep it for the demo. Set SIM_ROLES=admin for a locked-down deployment.
+_BASE_PERMISSIONS = {
+    "dispatcher": {"view", "dispatch"},
+    "admin": {"view", "dispatch", "simulate"},
 }
+SIM_ROLES = {r.strip() for r in os.getenv("SIM_ROLES", "dispatcher,admin").split(",") if r.strip()}
+PERMISSIONS = {role: perms | ({"simulate"} if role in SIM_ROLES else set()) for role, perms in _BASE_PERMISSIONS.items()}
+
+# Token claims. iss/aud are validated on every decode; a token without exp/iat/sub/role/iss/aud is rejected.
+ISSUER = os.getenv("JWT_ISSUER", "crisis-evac-engine")
+AUDIENCE = os.getenv("JWT_AUDIENCE", "crisis-dispatch")
+REQUIRED_CLAIMS = ["exp", "iat", "sub", "role", "iss", "aud"]
 
 
 def can(role: str, perm: str) -> bool:
@@ -51,30 +62,43 @@ def can(role: str, perm: str) -> bool:
 
 
 def create_token(username: str, role: str) -> str:
-    return jwt.encode({"sub": username, "role": role, "exp": int(time.time()) + TTL}, SECRET, algorithm="HS256")
+    t = int(time.time())
+    return jwt.encode({"sub": username, "role": role, "iat": t, "exp": t + TTL, "iss": ISSUER, "aud": AUDIENCE},
+                      SECRET, algorithm="HS256")
 
 
 def decode(token: str) -> dict | None:
-    try:
-        return jwt.decode(token, SECRET, algorithms=["HS256"])
+    try:  # algorithms is a strict allow-list: "none" and any other alg are rejected
+        claims = jwt.decode(token, SECRET, algorithms=["HS256"], issuer=ISSUER, audience=AUDIENCE,
+                            options={"require": REQUIRED_CLAIMS})
     except jwt.PyJWTError:
         return None
+    return claims if isinstance(claims.get("role"), str) and isinstance(claims.get("sub"), str) else None
 
 
 _bearer = HTTPBearer(auto_error=False)
 
 
-def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
+def _denied(request: Request, user: dict, why: str, perm: str | None = None):
+    audit.record("access.denied", user=user.get("sub"), role=user.get("role"), ip=audit.client_ip(request),
+                 method=request.method, path=request.url.path, permission=perm, reason=why)
+    raise ApiError(403, "FORBIDDEN", "Insufficient permissions")
+
+
+async def current_user(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
+    """401 for a missing / invalid / expired / wrong-iss-aud token; 403 for a valid token with an unknown role."""
     claims = decode(creds.credentials) if creds else None
     if not claims:
         raise ApiError(401, "UNAUTHORIZED", "Missing or invalid token")
+    if claims["role"] not in PERMISSIONS:
+        _denied(request, claims, "unknown role")
     return claims
 
 
 def require(perm: str):
-    def dep(user: dict = Depends(current_user)) -> dict:
-        if not can(user.get("role", ""), perm):
-            raise ApiError(403, "FORBIDDEN", "Insufficient permissions")
+    async def dep(request: Request, user: dict = Depends(current_user)) -> dict:
+        if not can(user["role"], perm):
+            _denied(request, user, "missing permission", perm)
         return user
 
     return dep
@@ -132,6 +156,11 @@ class LoginGuard:
 
 
 login_guard = LoginGuard()
+
+
+@router.get("/me")
+def me(user: dict = Depends(current_user)):
+    return {"username": user["sub"], "role": user["role"], "permissions": sorted(PERMISSIONS[user["role"]])}
 
 
 class LoginIn(BaseModel):
