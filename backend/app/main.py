@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import auth, dispatch, realtime
+from . import auth, dispatch, realtime, sim
 from .api import router
 from .db import init_db
 from .util import ApiError
@@ -26,7 +26,7 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_methods=["*"], allow_headers=["*"], expose_headers=["Retry-After"],
 )
-for r in (router, auth.router, dispatch.router, realtime.router):
+for r in (router, auth.router, dispatch.router, sim.router, realtime.router):
     app.include_router(r)
 
 

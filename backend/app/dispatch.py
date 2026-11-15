@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
 
-from . import services
+from . import alerts, services
 from .auth import require
 from .db import get_session
 from .models import Alert, Crew, District, Shelter, Sos
@@ -48,6 +48,16 @@ def list_sos(status: Optional[Literal["active", "resolved"]] = None, s: Session 
 @router.get("/crews")
 def list_crews(s: Session = Depends(get_session)):
     return {"items": [crew_out(c) for c in s.exec(select(Crew)).all()]}
+
+
+@router.post("/alerts/{alert_id}/approve")
+def approve_alert(alert_id: str, lang: str = Depends(get_lang), s: Session = Depends(get_session)):
+    return alerts.approve(s, alert_id, lang)
+
+
+@router.post("/alerts/{alert_id}/dismiss")
+def dismiss_alert(alert_id: str, lang: str = Depends(get_lang), s: Session = Depends(get_session)):
+    return alerts.dismiss(s, alert_id, lang)
 
 
 @router.get("/alerts")

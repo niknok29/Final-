@@ -1,4 +1,3 @@
-import secrets
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -6,7 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from . import realtime, routing, services
+from . import alerts, realtime, routing, services
 from .db import get_session
 from .models import District, Road, Shelter, Sos, now
 from .util import get_lang, iso, loc, sos_limiter
@@ -65,13 +64,7 @@ def route(fromLat: float, fromLng: float, shelterId: Optional[str] = None, citiz
 
 @router.post("/sos", status_code=201, dependencies=[Depends(sos_limiter)])
 def create_sos(body: SosIn, s: Session = Depends(get_session)):
-    x = Sos(
-        id="sos_" + secrets.token_hex(4), citizen_id=str(body.citizenId), type=body.type, lat=body.lat,
-        lng=body.lng, note=body.note, zone_id=services.nearest_district(s, body.lat, body.lng).id,
-    )
-    s.add(x)
-    s.commit()
-    realtime.sos_created(s, x)
+    x = alerts.submit_sos(s, str(body.citizenId), body.type, body.lat, body.lng, body.note)
     return {"id": x.id, "status": x.status, "createdAt": iso(x.created_at)}
 
 
