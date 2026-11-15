@@ -4,19 +4,25 @@ import random
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from . import alerts, realtime, routing
-from .auth import require
+from . import alerts, audit, realtime, routing
+from .auth import current_user, require
 from .db import get_session
 from .models import Alert, Crew, Road, Shelter, Sos
 from .seed import seed
 from .util import ApiError
 from .views import road_out, shelter_out
 
-router = APIRouter(prefix="/api/sim", dependencies=[Depends(require("simulate"))])
+def _audit_sim(request: Request, user: dict = Depends(current_user)):
+    """Runs after the permission check (dependency order): one audit line per authorised sim call."""
+    audit.record("sim.call", user=user.get("sub"), role=user.get("role"), ip=audit.client_ip(request),
+                 method=request.method, path=request.url.path)
+
+
+router = APIRouter(prefix="/api/sim", dependencies=[Depends(require("simulate")), Depends(_audit_sim)])
 OK = {"ok": True}
 
 

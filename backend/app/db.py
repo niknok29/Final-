@@ -20,6 +20,9 @@ def init_db():
     if insp.has_table("sos") and "priority_rank" not in {c["name"] for c in insp.get_columns("sos")}:
         SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+    for table in SQLModel.metadata.tables.values():  # create_all skips indexes of tables that already exist
+        for idx in table.indexes:
+            idx.create(engine, checkfirst=True)
     with Session(engine) as s:
         seed(s, only_if_empty=True)
         routing.build_matrix(s)  # also when the DB already had data (seed() returned early)

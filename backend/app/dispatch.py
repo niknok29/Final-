@@ -1,10 +1,10 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlmodel import Session, select
 
-from . import alerts, services
-from .auth import require
+from . import alerts, audit, services
+from .auth import current_user, require
 from .db import get_session
 from .models import Alert, Crew, District, Shelter, Sos
 from .util import get_lang
@@ -51,13 +51,19 @@ def list_crews(s: Session = Depends(get_session)):
 
 
 @router.post("/alerts/{alert_id}/approve")
-def approve_alert(alert_id: str, lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return alerts.approve(s, alert_id, lang)
+def approve_alert(alert_id: str, request: Request, user: dict = Depends(current_user),
+                  lang: str = Depends(get_lang), s: Session = Depends(get_session)):
+    out = alerts.approve(s, alert_id, lang)
+    audit.record("alert.approve", user=user.get("sub"), role=user.get("role"), ip=audit.client_ip(request), alertId=alert_id)
+    return out
 
 
 @router.post("/alerts/{alert_id}/dismiss")
-def dismiss_alert(alert_id: str, lang: str = Depends(get_lang), s: Session = Depends(get_session)):
-    return alerts.dismiss(s, alert_id, lang)
+def dismiss_alert(alert_id: str, request: Request, user: dict = Depends(current_user),
+                  lang: str = Depends(get_lang), s: Session = Depends(get_session)):
+    out = alerts.dismiss(s, alert_id, lang)
+    audit.record("alert.dismiss", user=user.get("sub"), role=user.get("role"), ip=audit.client_ip(request), alertId=alert_id)
+    return out
 
 
 @router.get("/alerts")
