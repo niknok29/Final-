@@ -65,6 +65,17 @@ def set_occupancy(shelter_id: str, body: OccIn, s: Session = Depends(get_session
     return OK
 
 
+class ProviderIn(BaseModel):
+    state: Literal["up", "down", "slow"]
+
+
+@router.post("/provider")
+def set_provider(body: ProviderIn):
+    """Force the routing provider into outage ("down"), timeout/latency ("slow") or normal ("up") mode."""
+    routing.set_state(body.state)
+    return {"ok": True, "state": body.state}
+
+
 @router.post("/sos-burst")
 def sos_burst(body: BurstIn, s: Session = Depends(get_session)):
     """N SOS from different fake citizens, all within 200 m of the point (so pairwise < 500 m)."""
@@ -90,7 +101,7 @@ def reset(s: Session = Depends(get_session)):
         s.commit()
         realtime.alert_updated(a)
     seed(s)
-    routing.breaker.success()
+    routing.set_state("up")
     for x in s.exec(select(Shelter)).all():
         realtime.to_all("shelter.updated", realtime.by_lang(lambda l: shelter_out(x, l)))
     for r in s.exec(select(Road)).all():

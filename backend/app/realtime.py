@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlmodel import Session
 
-from . import services
+from . import routing, services
 from .auth import can, decode
 from .db import engine
 from .models import District, now
@@ -31,7 +31,7 @@ class Hub:
 
     def submit(self, select, type_: str, data: dict):
         """`select` runs on the event loop and returns [(ws, lang)]; `data` maps lang -> payload."""
-        if not self.loop:
+        if not self.loop or self.loop.is_closed():  # not started yet, or already shut down
             return
 
         async def run():
@@ -90,6 +90,9 @@ def alert_created(a):
 
 def alert_updated(a):
     to_dispatchers("alert.updated", by_lang(lambda l: alert_out(a, l)))
+
+
+routing.listener = lambda snap: to_dispatchers("provider.updated", by_lang(lambda l: snap))
 
 
 def shelter_changed(x):

@@ -31,7 +31,8 @@ class SafeIn(BaseModel):
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "routingProvider": "up" if routing.routing_up() else "down"}
+    return {"status": "ok", "routingProvider": "up" if routing.routing_up() else "down",
+            "breaker": routing.status()["breaker"]}
 
 
 @router.get("/districts")
