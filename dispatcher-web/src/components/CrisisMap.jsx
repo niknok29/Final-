@@ -388,7 +388,7 @@ export const CrisisMap = memo(function CrisisMap() {
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           <MapController mapFocus={mapFocus} sosMarkerRefs={sosMarkerRefs} />
