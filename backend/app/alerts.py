@@ -7,11 +7,12 @@ from sqlmodel import Session, select
 
 from . import realtime, services
 from .models import Alert, Crew, Shelter, Sos, now
-from .util import ApiError, haversine
+from .util import ApiError, haversine, iso
 from .views import ALERT_CODE, PRIORITY_CODE, alert_out, crew_out, shelter_out
 
 WINDOW_MIN = 5        # minutes
 RADIUS_M = 500        # meters around the newest SOS
+MERGE_RADIUS_M = 1000  # a new SOS_CLUSTER within this distance of a pending one is merged into it
 MIN_CITIZENS = 4      # distinct citizens needed for a cluster
 OVERLOAD_PCT = 95     # shelter occupancy strictly above this raises an alert
 
@@ -73,7 +74,14 @@ def check_sos(s: Session, x: Sos) -> Alert | None:
     if len(citizens) < MIN_CITIZENS:
         return None
     pending = s.exec(select(Alert).where(Alert.status == "pending", Alert.kind == "SOS_CLUSTER")).all()
-    if any(haversine(x.lat, x.lng, a.lat, a.lng) <= RADIUS_M for a in pending):  # same cluster already raised
+    merge_into = next((a for a in pending if haversine(x.lat, x.lng, a.lat, a.lng) <= MERGE_RADIUS_M), None)
+    if merge_into:  # a pending cluster alert within 1 km already exists: grow it instead of raising another one
+        merge_into.details = {**merge_into.details, "sosCount": max(merge_into.details.get("sosCount") or 0, len(citizens)),
+                              "updatedAt": iso(now())}
+        s.add(merge_into)
+        s.commit()
+        s.refresh(merge_into)
+        realtime.alert_updated(merge_into)
         return None
     lat, lng = sum(y.lat for y in near) / len(near), sum(y.lng for y in near) / len(near)
     return _create(s, "SOS_CLUSTER", lat, lng, _details(sosCount=len(citizens)))

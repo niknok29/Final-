@@ -173,3 +173,25 @@ def test_me_and_denied_is_audited(client, monkeypatch):
     audit.flush()
     row = [__import__("json").loads(x) for x in audit.path().read_text().splitlines()][-1]
     assert row["event"] == "access.denied" and row["role"] == "viewer" and row["user"] == "u" and row["ip"]
+
+
+# ---- alert merge + cap ------------------------------------------------------------------------------------------
+def test_cluster_within_1km_merges_into_pending_alert(client, headers):
+    for base in (40.300, 40.306):  # two clusters ~700 m apart: each has 4 distinct citizens within 500 m
+        for i in range(4):
+            assert sos(client, lat=base + i * 0.001).status_code == 201
+    items = client.get("/api/alerts?status=pending", headers=headers).json()["items"]
+    clusters = [a for a in items if a["kind"] == "SOS_CLUSTER"]
+    assert len(clusters) == 1 and clusters[0]["details"]["updatedAt"]
+
+
+def test_pending_alerts_capped_at_20_with_total(client, headers, db):
+    from app.models import Alert
+
+    for i in range(25):
+        db.add(Alert(id=f"x{i}", kind="SHELTER_OVERLOAD", zone_id="khatai", lat=40.3, lng=49.8, code="RED_ALERT_SEND_CREW_OPEN_SHELTER",
+                     details={}, proposal={}))
+    db.commit()
+    d = client.get("/api/dashboard", headers=headers).json()
+    assert d["stats"]["totalPending"] == 25 and sum(a["status"] == "pending" for a in d["alerts"]) == 20
+    assert len(client.get("/api/alerts?status=pending", headers=headers).json()["items"]) == 20

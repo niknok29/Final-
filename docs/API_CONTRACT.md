@@ -367,3 +367,6 @@ Do not use `--reload` (it adds a file watcher and a second process) or several `
 
 ### M.8 Load test
 `python tools/loadtest.py --scenario flood [--pace-seconds 3] [--procs 4] --base-url http://127.0.0.1:8000` — 600 SOS (600 random citizens, ~10 % duplicates, ~25 % same coordinates) + 200 GET shelters/route from several processes, while a dispatcher polls `GET /api/dashboard` every 200 ms. `--pace-seconds 0` (default) releases everything in the same instant (stress); `3` spreads it over 3 s. From one IP the per-IP limit rejects most SOS cheaply; start the server with `RATE_LIMIT_SOS=100000 RATE_LIMIT_GLOBAL=100000` to simulate a distributed attack that reaches the real pipeline. No third-party packages are needed.
+
+### M.9 Alert merge and cap (v1.6.1)
+A new `SOS_CLUSTER` within 1 km of an existing PENDING `SOS_CLUSTER` alert is merged into it: `details.sosCount` grows (max), `details.updatedAt` is set and `alert.updated` is emitted; no new alert is created. `GET /api/dashboard` and `GET /api/alerts` return at most the 20 newest PENDING alerts (non-pending history is unchanged); `stats.totalPending` (and `stats.pendingAlerts`) carry the real pending count.
