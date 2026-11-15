@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
+import { findNearestShelter, formatDistance } from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatClockTime, formatRelativeTime } from '../utils/time.js'
 import { HazardIcon } from './HazardIcon.jsx'
@@ -93,6 +94,7 @@ export function SosFeedPanel() {
             )
             const timeLabel = formatRelativeTime(item.createdAt || item.ts, t, nowMs, i18n.language)
             const clockLabel = formatClockTime(item.createdAt || item.ts, i18n.language)
+            const nearest = findNearestShelter(item.lat, item.lng, dashboard.shelters, isPriority)
 
             return (
               <button
@@ -126,6 +128,15 @@ export function SosFeedPanel() {
                 </div>
 
                 <p className="sos-note">{noteText}</p>
+
+                {nearest && (
+                  <div className="sos-shelter-distance">
+                    {t('sos.nearestShelter', {
+                      name: sanitizeUserNote(nearest.shelter.name, 36),
+                      distance: formatDistance(nearest.distanceMeters, i18n.language),
+                    })}
+                  </div>
+                )}
 
                 <div className="sos-card-footer">
                   <span className={`sos-status sos-status-${item.status || 'active'}`}>

@@ -29,6 +29,9 @@
     "routingSlow": "SLOW",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "EHTİYAT MARŞRUT REJİMİ",
+    "backupModeNotice": "Ehtiyat marşrut rejimi — xarici naviqasiya xidməti əlçatan deyil (HTTP 503), birbaşa Haversine məsafəsi istifadə olunur",
+    "backupModeSlowNotice": "Ehtiyat marşrut rejimi — xarici naviqasiya xidməti gecikir (SLOW), 2 san taymaut zamanı birbaşa Haversine məsafəsi istifadə olunur",
     "muteAudio": "Səsi bağla",
     "unmuteAudio": "Səsi aç",
     "simulationBtn": "Simulyasiya",
@@ -74,6 +77,7 @@
     "flyHint": "Xəritədə baxmaq üçün klikləyin",
     "priorityBadge": "♿ PRİORİTET #1",
     "priorityOnly": "♿ Yalnız prioritet",
+    "nearestShelter": "Ən yaxın sığınacaq: {{name}} ({{distance}})",
     "filters": {
       "all": "Hamısı",
       "fire": "Yanğın",
@@ -125,6 +129,11 @@
       "accessibleTransport": "Əlçatan nəqliyyat",
       "reportedAt": "Vaxt",
       "priorityCritical": "♿ Prioritet #1 (Xüsusi ehtiyac)",
+      "radius": "Radius",
+      "alertRadius": "Klaster radiusu",
+      "nearestShelter": "Ən yaxın sığınacaq",
+      "distanceToTarget": "Hadisəyə məsafə",
+      "roadLength": "Uzunluq",
       "yes": "Var (♿)",
       "no": "Yoxdur"
     }
@@ -137,6 +146,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Təyinat: {{id}}",
     "unassigned": "Sərbəst növbə",
+    "distanceToIncident": "Hadisəyə məsafə: {{distance}}",
     "accessible": "♿ Əlçatan",
     "notAccessible": "Məhdud giriş",
     "accessibleTransport": "♿ Əlçatan nəqliyyat",
@@ -176,7 +186,7 @@
     "providerSection": "Marşrutlaşdırma Provayderi",
     "providerUp": "Up",
     "providerSlow": "Slow",
-    "providerDown": "Down",
+    "providerDown": "Down (HTTP 503)",
     "resetSection": "Bərpa",
     "resetBtn": "Simulyasiyanı Sıfırla"
   },

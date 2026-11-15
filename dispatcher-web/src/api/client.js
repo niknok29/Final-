@@ -16,7 +16,7 @@ import {
 
 const SESSION_KEY = 'dispatcher_session'
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 let memorySession = null
 let onUnauthorizedCb = null

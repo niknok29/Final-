@@ -29,6 +29,9 @@
     "routingSlow": "SLOW",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "BACKUP ROUTE MODE",
+    "backupModeNotice": "Backup route mode — external routing provider is unavailable (HTTP 503), direct Haversine fallback routing is active",
+    "backupModeSlowNotice": "Backup route mode — external routing provider is degraded (SLOW), direct Haversine fallback routing is used on timeout",
     "muteAudio": "Mute alerts",
     "unmuteAudio": "Unmute alerts",
     "simulationBtn": "Simulation",
@@ -74,6 +77,7 @@
     "flyHint": "Click to focus on map",
     "priorityBadge": "♿ PRIORITY #1",
     "priorityOnly": "♿ Priority only",
+    "nearestShelter": "Nearest shelter: {{name}} ({{distance}})",
     "filters": {
       "all": "All",
       "fire": "Fire",
@@ -125,6 +129,11 @@
       "accessibleTransport": "Accessible transport",
       "reportedAt": "Reported",
       "priorityCritical": "♿ Priority #1 (Special needs)",
+      "radius": "Radius",
+      "alertRadius": "Cluster radius",
+      "nearestShelter": "Nearest shelter",
+      "distanceToTarget": "Distance to incident",
+      "roadLength": "Length",
       "yes": "Yes (♿)",
       "no": "No"
     }
@@ -137,6 +146,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Assigned: {{id}}",
     "unassigned": "Standing by",
+    "distanceToIncident": "To incident: {{distance}}",
     "accessible": "♿ Accessible",
     "notAccessible": "Not step-free",
     "accessibleTransport": "♿ Accessible transport",
@@ -176,7 +186,7 @@
     "providerSection": "Routing Provider",
     "providerUp": "Up",
     "providerSlow": "Slow",
-    "providerDown": "Down",
+    "providerDown": "Down (HTTP 503)",
     "resetSection": "Reset",
     "resetBtn": "Reset Simulation"
   },

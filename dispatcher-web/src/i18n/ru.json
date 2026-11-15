@@ -29,6 +29,9 @@
     "routingSlow": "SLOW",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "РЕЖИМ РЕЗЕРВНОГО МАРШРУТА",
+    "backupModeNotice": "Режим резервного маршрута — внешний сервис навигации недоступен (HTTP 503), используется прямой расчет расстояния по формуле Гаверсинуса",
+    "backupModeSlowNotice": "Режим резервного маршрута — внешний сервис навигации отвечает медленно (SLOW), при таймауте используется прямой расчет по Гаверсинусу",
     "muteAudio": "Выключить звук",
     "unmuteAudio": "Включить звук",
     "simulationBtn": "Симуляция",
@@ -74,6 +77,7 @@
     "flyHint": "Нажмите для перехода на карте",
     "priorityBadge": "♿ ПРИОРИТЕТ #1",
     "priorityOnly": "♿ Только приоритетные",
+    "nearestShelter": "Ближайшее убежище: {{name}} ({{distance}})",
     "filters": {
       "all": "Все",
       "fire": "Пожар",
@@ -125,6 +129,11 @@
       "accessibleTransport": "Доступный транспорт",
       "reportedAt": "Время",
       "priorityCritical": "♿ Приоритет #1 (Особые потребности)",
+      "radius": "Радиус",
+      "alertRadius": "Радиус кластера",
+      "nearestShelter": "Ближайшее убежище",
+      "distanceToTarget": "Расстояние до инцидента",
+      "roadLength": "Протяженность",
       "yes": "Да (♿)",
       "no": "Нет"
     }
@@ -137,6 +146,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Назначение: {{id}}",
     "unassigned": "В резерве",
+    "distanceToIncident": "До инцидента: {{distance}}",
     "accessible": "♿ Доступно",
     "notAccessible": "Без пандуса",
     "accessibleTransport": "♿ Доступный транспорт",
@@ -176,7 +186,7 @@
     "providerSection": "Провайдер маршрутизации",
     "providerUp": "Up",
     "providerSlow": "Slow",
-    "providerDown": "Down",
+    "providerDown": "Down (HTTP 503)",
     "resetSection": "Сброс",
     "resetBtn": "Сбросить симуляцию"
   },

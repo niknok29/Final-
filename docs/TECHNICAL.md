@@ -106,14 +106,33 @@
 
 ---
 
-## 4. Routing Provider Outage, Circuit Breaker & Simulation (Section J)
+## 4. Routing Provider Outage (HTTP 503), Circuit Breaker & Backup Route Mode (Drop 2 / Section J)
 
+- **Live Backend Default (`src/api/client.js` & `.env.example`):**
+  - `USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'` ensures the dashboard defaults to the live FastAPI backend even when `.env` is absent; `.env.example` ships with `VITE_API_URL=http://localhost:8000` and `VITE_USE_MOCK=false`.
 - **Health Initialization & Live Telemetry (`GET /api/health` + `WS provider.updated`):**
   - On initial load and WebSocket reconnect (`onReconnectResync`), `getHealth()` queries `GET /api/health`, receiving `{ status, routingProvider: "up" | "down" | "slow", breaker: "closed" | "open" }`.
   - Live WebSocket `provider.updated` events (`{ state: "up" | "down" | "slow", breaker: "closed" | "open" }`) immediately update `routingProvider` and `routingBreaker` in `DashboardContext` without reloading.
 - **Backend Circuit Breaker & Haversine Fallback (`backend/app/routing.py`):**
   - Supports `MockProvider` (default) or `OsrmProvider` (`ROUTING_PROVIDER=osrm`, optional `MOCK_ROUTING_DOWN=1`).
   - `CircuitBreaker(threshold=3, cooldown=30.0)` with a `2.0s` upstream request timeout (and `3.0s` simulated delay in `slow` mode) opens after 3 failures for a 30-second cooldown, serving Haversine straight-line `"fallback"` routes so route queries remain non-blocking.
-- **Header Pill & Simulation Controls (`Header.jsx` & `SimulationDrawer.jsx`):**
+- **Header Pill, Backup Route Mode Banner & Simulation Controls (`Header.jsx`, `DashboardPage.jsx`, `SimulationDrawer.jsx`):**
   - `Header.jsx` displays the color-coded Routing Provider pill (`UP` green, `SLOW` amber, `DOWN` red) alongside the live circuit breaker badge (`breaker: closed` / `breaker: open`).
-  - `SimulationDrawer.jsx` exposes **Up**, **Slow**, and **Down** controls wired to `POST /api/sim/provider` (`{"state": "up" | "down" | "slow"}`) with active-state highlighting and toast confirmation; `POST /api/sim/reset` restores `up` / `closed` state.
+  - `DashboardPage.jsx` renders a localized **"Backup route mode"** notice banner (`HTTP 503` / `SLOW` + breaker state) whenever `routingProvider` is `"down"` or `"slow"` or `breaker === "open"`.
+  - `SimulationDrawer.jsx` exposes **Up**, **Slow**, and **Down (HTTP 503)** controls wired to `POST /api/sim/provider` (`{"state": "up" | "down" | "slow"}`) with active-state highlighting and toast confirmation; `POST /api/sim/reset` restores `up` / `closed` state.
+
+---
+
+## 5. Real-World Geospatial Metrics & Authentic Baku Coordinates
+
+- **Metric Leaflet Circles (`CrisisMap.jsx`):**
+  - District zones render using Leaflet's geographic `<Circle radius={zone.radiusMeters || 500} />` (measured in meters so circles scale accurately with zoom).
+  - Active (`pending`) or focused Red Alerts (`SOS_CLUSTER`, `PRIORITY_SOS`) render a pulsing crimson dashed `<Circle radius={alert.details?.radiusMeters || 500} />` with tooltip/popup readout (`500 m`).
+- **Exact Haversine Distance Utility (`src/utils/geo.js`):**
+  - `calculateDistanceMeters(lat1, lng1, lat2, lng2)` computes spherical Earth distance in meters ($R = 6,371,000\text{ m}$).
+  - `calculatePathLengthMeters(path)` sums consecutive polyline segment lengths across `[lat, lng]` waypoints for road length readouts.
+  - `formatDistance(meters, locale)` renders locale-aware meters (`< 1000 m`) or tenths of kilometers (`>= 1000 m`).
+  - `SosFeedPanel.jsx` (`findNearestShelter`), `RightStatusPanel.jsx` (`findCrewTargetDistance`), and `CrisisMap.jsx` popups display live Haversine distances for shelters, crews, and roads.
+- **Authentic Baku Coordinates & Avenue Polylines (`src/api/mock.js`):**
+  - Live backend responses (`VITE_USE_MOCK=false`) always take precedence; offline mock fixtures match real Baku landmarks (`Heydər Əliyev Mərkəzi / Parkı` `[40.3959, 49.8678]`, `Bakı Olimpiya Stadionu` `[40.4298, 49.9197]`, `Tofiq Bəhramov adına Respublika Stadionu` `[40.3975, 49.8524]`, `Neftçi Arena` `[40.4008, 49.9436]`, `Dənizkənarı Milli Park` `[40.3665, 49.8372]`, `Gənclik Mall / Park` `[40.4002, 49.8529]`).
+  - Major arteries (`Neftçilər prospekti`, `Heydər Əliyev prospekti`, `Tbilisi prospekti`, `Ziya Bünyadov prospekti`, `Azadlıq prospekti`, `28 May küçəsi`) use multi-point street waypoint polylines with computed `lengthMeters`.
