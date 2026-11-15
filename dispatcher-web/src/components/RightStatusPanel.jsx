@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
+import { formatNumber } from '../utils/time.js'
 
 function getShelterBarColor(status, percent) {
   if (status === 'closed') return 'bar-closed'
@@ -11,12 +12,13 @@ function getShelterBarColor(status, percent) {
 }
 
 export function RightStatusPanel() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { dashboard, focusMap } = useDashboard()
+  const lang = i18n.language
 
   const sortedShelters = dashboard.shelters
     .slice()
-    .sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0))
+    .sort((a, b) => (b.occupancyPercent ?? b.percent ?? 0) - (a.occupancyPercent ?? a.percent ?? 0))
 
   return (
     <aside className="panel panel-right" aria-label="Zones, Shelters and Crews">
@@ -24,7 +26,7 @@ export function RightStatusPanel() {
         <section className="status-section">
           <div className="section-header">
             <h2 className="panel-title">{t('rightPanel.zonesTitle')}</h2>
-            <span className="panel-count-badge">{dashboard.zones.length}</span>
+            <span className="panel-count-badge">{formatNumber(dashboard.zones.length, lang)}</span>
           </div>
           <div className="zones-grid">
             {dashboard.zones.map((zone) => (
@@ -51,11 +53,12 @@ export function RightStatusPanel() {
         <section className="status-section">
           <div className="section-header">
             <h2 className="panel-title">{t('rightPanel.sheltersTitle')}</h2>
-            <span className="panel-count-badge">{sortedShelters.length}</span>
+            <span className="panel-count-badge">{formatNumber(sortedShelters.length, lang)}</span>
           </div>
           <div className="shelters-list">
             {sortedShelters.map((shelter) => {
-              const pct = Math.max(0, Math.min(100, Math.round(Number(shelter.percent) || 0)))
+              const rawPct = shelter.occupancyPercent ?? shelter.percent ?? 0
+              const pct = Math.max(0, Math.min(100, Math.round(Number(rawPct) || 0)))
               const barClass = getShelterBarColor(shelter.status, pct)
 
               return (
@@ -67,21 +70,28 @@ export function RightStatusPanel() {
                 >
                   <div className="shelter-top">
                     <span className="shelter-name">{sanitizeUserNote(shelter.name, 60)}</span>
-                    <span className={`shelter-status-pill shelter-status-${shelter.status}`}>
-                      {t(`rightPanel.shelterStatuses.${shelter.status}`, {
-                        defaultValue: shelter.status,
-                      })}
-                    </span>
+                    <div className="shelter-badges">
+                      {shelter.accessible && (
+                        <span className="acc-badge" title={t('rightPanel.accessible')}>
+                          {t('rightPanel.accessible')}
+                        </span>
+                      )}
+                      <span className={`shelter-status-pill shelter-status-${shelter.status}`}>
+                        {t(`rightPanel.shelterStatuses.${shelter.status}`, {
+                          defaultValue: shelter.status,
+                        })}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="shelter-meta">
                     <span>
                       {t('rightPanel.capacityCount', {
-                        occupancy: shelter.occupancy ?? 0,
-                        capacity: shelter.capacity ?? 0,
+                        occupancy: formatNumber(shelter.occupancy ?? 0, lang),
+                        capacity: formatNumber(shelter.capacity ?? 0, lang),
                       })}
                     </span>
-                    <strong>{pct}%</strong>
+                    <strong>{formatNumber(pct, lang)}%</strong>
                   </div>
 
                   <div className="progress-track" aria-hidden="true">
@@ -96,7 +106,7 @@ export function RightStatusPanel() {
         <section className="status-section">
           <div className="section-header">
             <h2 className="panel-title">{t('rightPanel.crewsTitle')}</h2>
-            <span className="panel-count-badge">{dashboard.crews.length}</span>
+            <span className="panel-count-badge">{formatNumber(dashboard.crews.length, lang)}</span>
           </div>
           <div className="crews-list">
             {dashboard.crews.map((crew) => (
@@ -107,7 +117,14 @@ export function RightStatusPanel() {
                 onClick={() => focusMap({ lat: crew.lat, lng: crew.lng, zoom: 15 })}
               >
                 <div className="crew-info">
-                  <span className="crew-name">{sanitizeUserNote(crew.name, 60)}</span>
+                  <div className="crew-name-row">
+                    <span className="crew-name">{sanitizeUserNote(crew.name, 60)}</span>
+                    {crew.accessibleTransport && (
+                      <span className="acc-badge" title={t('rightPanel.accessibleTransport')}>
+                        {t('rightPanel.accessibleTransport')}
+                      </span>
+                    )}
+                  </div>
                   <span className="crew-assign">
                     {crew.assignedAlertId
                       ? t('rightPanel.assignedTo', {

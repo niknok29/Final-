@@ -12,8 +12,10 @@ import {
   simCloseRoad,
   simOpenRoad,
   simReset,
+  simSetProvider,
   simSetShelterOccupancy,
   simSosBurst,
+  USE_MOCK,
 } from '../api/client.js'
 import { connectDispatcherWS } from '../api/ws.js'
 import { playAlertBeep } from '../utils/audio.js'
@@ -22,6 +24,7 @@ import { DashboardContext } from './dashboardStore.js'
 const EMPTY_DASHBOARD = {
   stats: {
     activeSos: 0,
+    prioritySos: 0,
     pendingAlerts: 0,
     shelters: 0,
     fullShelters: 0,
@@ -36,16 +39,24 @@ const EMPTY_DASHBOARD = {
   roads: [],
 }
 
+function isPrioritySosItem(item) {
+  return item?.profile === 'special_needs' || item?.priorityRank === 1
+}
+
 function computeStatsFromArrays({ sos, alerts, shelters, crews }) {
-  const activeSos = sos.filter((s) => s.status !== 'resolved').length
+  const activeSosItems = sos.filter((s) => s.status !== 'resolved')
+  const activeSos = activeSosItems.length
+  const prioritySos = activeSosItems.filter(isPrioritySosItem).length
   const pendingAlerts = alerts.filter((a) => a.status === 'pending').length
-  const fullShelters = shelters.filter(
-    (s) => s.status !== 'closed' && (s.status === 'full' || s.status === 'near_full' || (s.percent ?? 0) >= 90)
-  ).length
+  const fullShelters = shelters.filter((s) => {
+    const pct = s.occupancyPercent ?? s.percent ?? 0
+    return s.status !== 'closed' && (s.status === 'full' || s.status === 'near_full' || pct >= 90)
+  }).length
   const availableCrews = crews.filter((c) => c.status === 'available').length
 
   return {
     activeSos,
+    prioritySos,
     pendingAlerts,
     shelters: shelters.length,
     fullShelters,
@@ -65,8 +76,11 @@ function upsertById(list, item, prepend = false) {
   return next
 }
 
-function sortSosNewest(items) {
+function sortSosByPriorityAndTime(items) {
   return items.slice().sort((a, b) => {
+    const rankA = a.priorityRank ?? (a.profile === 'special_needs' ? 1 : 2)
+    const rankB = b.priorityRank ?? (b.profile === 'special_needs' ? 1 : 2)
+    if (rankA !== rankB) return rankA - rankB
     const tA = Date.parse(a.createdAt || a.ts || 0) || 0
     const tB = Date.parse(b.createdAt || b.ts || 0) || 0
     return tB - tA
@@ -81,7 +95,9 @@ function createInitialState() {
     loadingDashboard: Boolean(stored),
     connectionStatus: 'live',
     routingProvider: 'up',
+    routingBreaker: 'closed',
     sosFilter: 'all',
+    priorityOnlyFilter: false,
     recentSosIds: [],
     mapFocus: null,
     simTargetCoords: { lat: 40.4093, lng: 49.8671 },
@@ -115,7 +131,9 @@ function reducer(state, action) {
     case 'SET_DASHBOARD': {
       const payload = action.payload || {}
       const zones = Array.isArray(payload.zones) ? payload.zones : state.dashboard.zones
-      const sos = sortSosNewest(Array.isArray(payload.sos) ? payload.sos : state.dashboard.sos)
+      const sos = sortSosByPriorityAndTime(
+        Array.isArray(payload.sos) ? payload.sos : state.dashboard.sos
+      )
       const shelters = Array.isArray(payload.shelters) ? payload.shelters : state.dashboard.shelters
       const crews = Array.isArray(payload.crews) ? payload.crews : state.dashboard.crews
       const alerts = Array.isArray(payload.alerts) ? payload.alerts : state.dashboard.alerts
@@ -125,7 +143,11 @@ function reducer(state, action) {
         ...state,
         loadingDashboard: false,
         dashboard: {
-          stats: { ...derived, ...(payload.stats || {}) },
+          stats: {
+            ...derived,
+            ...(payload.stats || {}),
+            prioritySos: payload.stats?.prioritySos ?? derived.prioritySos,
+          },
           zones,
           sos,
           shelters,
@@ -139,11 +161,18 @@ function reducer(state, action) {
     case 'APPLY_WS_EVENT': {
       const { type, data } = action.payload || {}
       if (!type || !data) return state
+      if (type === 'provider.updated') {
+        return {
+          ...state,
+          routingProvider: data.state || state.routingProvider,
+          routingBreaker: data.breaker || state.routingBreaker,
+        }
+      }
       const d = state.dashboard
       let next = d
 
       if (type === 'sos.created' || type === 'sos.updated') {
-        const sos = sortSosNewest(upsertById(d.sos, data, type === 'sos.created'))
+        const sos = sortSosByPriorityAndTime(upsertById(d.sos, data, type === 'sos.created'))
         next = { ...d, sos }
       } else if (type === 'shelter.updated') {
         next = { ...d, shelters: upsertById(d.shelters, data) }
@@ -176,7 +205,8 @@ function reducer(state, action) {
         alerts = alerts.map((a) => (a.id === alertId ? { ...a, status } : a))
       }
       const crews = result?.crew ? upsertById(d.crews, result.crew) : d.crews
-      const shelters = result?.shelter ? upsertById(d.shelters, result.shelter) : d.shelters
+      const resolvedShelter = result?.newShelter || result?.shelter || null
+      const shelters = resolvedShelter ? upsertById(d.shelters, resolvedShelter) : d.shelters
       const next = { ...d, alerts, crews, shelters }
       next.stats = computeStatsFromArrays(next)
       return { ...state, dashboard: next }
@@ -185,11 +215,32 @@ function reducer(state, action) {
     case 'SET_CONNECTION_STATUS':
       return { ...state, connectionStatus: action.payload }
 
-    case 'SET_ROUTING_PROVIDER':
-      return { ...state, routingProvider: action.payload }
+    case 'SET_HEALTH_STATUS': {
+      const { routingProvider, breaker } = action.payload || {}
+      const nextBreaker = breaker || state.routingBreaker
+      let nextProvider = state.routingProvider
+      if (routingProvider === 'up') {
+        nextProvider = 'up'
+      } else if (routingProvider === 'down') {
+        nextProvider =
+          state.routingProvider === 'slow' && nextBreaker !== 'open' ? 'slow' : 'down'
+      }
+      return {
+        ...state,
+        routingProvider: nextProvider,
+        routingBreaker: nextBreaker,
+      }
+    }
 
     case 'SET_SOS_FILTER':
       return { ...state, sosFilter: action.payload }
+
+    case 'TOGGLE_PRIORITY_ONLY_FILTER':
+      return {
+        ...state,
+        priorityOnlyFilter:
+          typeof action.payload === 'boolean' ? action.payload : !state.priorityOnlyFilter,
+      }
 
     case 'ADD_RECENT_SOS': {
       if (state.recentSosIds.includes(action.payload)) return state
@@ -247,7 +298,7 @@ function reducer(state, action) {
 
 export function DashboardProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, null, createInitialState)
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const audioMutedRef = useRef(state.audioMuted)
   const toastSeqRef = useRef(1)
 
@@ -277,8 +328,12 @@ export function DashboardProvider({ children }) {
       onUnauthorized: () => {
         dispatch({ type: 'LOGOUT' })
       },
-      onRateLimit: () => {
-        addToast(t('toast.rateLimit'), 'warning')
+      onRateLimit: (retryAfter) => {
+        if (retryAfter) {
+          addToast(t('toast.rateLimitRetry', { seconds: retryAfter }), 'warning')
+        } else {
+          addToast(t('toast.rateLimit'), 'warning')
+        }
       },
     })
   }, [addToast, t])
@@ -290,13 +345,15 @@ export function DashboardProvider({ children }) {
         getHealth().catch(() => ({ routingProvider: 'down' })),
       ])
       dispatch({ type: 'SET_DASHBOARD', payload: snapshot })
-      if (health?.routingProvider) {
-        dispatch({ type: 'SET_ROUTING_PROVIDER', payload: health.routingProvider })
+      if (health?.routingProvider || health?.breaker) {
+        dispatch({ type: 'SET_HEALTH_STATUS', payload: health })
       }
     } catch {
       // Handled by api callbacks on 401/429
     }
   }, [])
+
+  const wsLang = USE_MOCK ? 'az' : i18n.language
 
   useEffect(() => {
     const token = state.user?.token
@@ -307,22 +364,31 @@ export function DashboardProvider({ children }) {
     const healthInterval = setInterval(async () => {
       try {
         const health = await getHealth()
-        if (health?.routingProvider) {
-          dispatch({ type: 'SET_ROUTING_PROVIDER', payload: health.routingProvider })
+        if (health?.routingProvider || health?.breaker) {
+          dispatch({ type: 'SET_HEALTH_STATUS', payload: health })
         }
       } catch {
-        dispatch({ type: 'SET_ROUTING_PROVIDER', payload: 'down' })
+        dispatch({
+          type: 'SET_HEALTH_STATUS',
+          payload: { routingProvider: 'down', breaker: 'open' },
+        })
       }
     }, 20000)
 
     const disconnectWs = connectDispatcherWS({
       token,
+      lang: wsLang,
       onStatusChange: (status) => {
         dispatch({ type: 'SET_CONNECTION_STATUS', payload: status })
       },
       onReconnectResync: async () => {
         await loadSnapshotAndHealth()
         addToast(t('toast.reconnected'), 'success')
+      },
+      onAuthFailure: () => {
+        clearSession()
+        dispatch({ type: 'LOGOUT' })
+        addToast(t('toast.wsAuthExpired'), 'error')
       },
       onEvent: (envelope) => {
         dispatch({ type: 'APPLY_WS_EVENT', payload: envelope })
@@ -343,7 +409,7 @@ export function DashboardProvider({ children }) {
       clearInterval(healthInterval)
       disconnectWs()
     }
-  }, [state.user?.token, loadSnapshotAndHealth, addToast, t])
+  }, [state.user?.token, wsLang, loadSnapshotAndHealth, addToast, t])
 
   const handleLogin = useCallback(async (username, password) => {
     const session = await login(username, password)
@@ -367,22 +433,45 @@ export function DashboardProvider({ children }) {
             payload: { lat: alert.lat, lng: alert.lng, zoom: 15, alertId: alert.id },
           })
         }
-        addToast(
-          t('toast.alertApproved', {
-            crew: alert.proposal?.crewName || 'Crew',
-            shelter: alert.proposal?.openShelterName || 'Shelter',
-          }),
-          'success'
-        )
+
+        const crewName =
+          result?.crew?.name ||
+          result?.alert?.proposal?.crewName ||
+          alert.proposal?.crewName ||
+          'Crew'
+        const shelterName =
+          result?.newShelter?.name ||
+          result?.shelter?.name ||
+          alert.proposal?.newShelterName ||
+          alert.proposal?.openShelterName ||
+          null
+
+        if (
+          alert.kind === 'PRIORITY_SOS' ||
+          alert.code === 'PRIORITY_SOS_DISPATCH_ACCESSIBLE_TRANSPORT' ||
+          !shelterName
+        ) {
+          addToast(t('toast.priorityAlertApproved', { crew: crewName }), 'success')
+        } else {
+          addToast(
+            t('toast.alertApproved', { crew: crewName, shelter: shelterName }),
+            'success'
+          )
+        }
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
-          addToast(t('toast.actionError'), 'error')
+        if (err?.code === 'ALERT_NOT_PENDING') {
+          addToast(t('toast.alertNotPending'), 'warning')
+          await loadSnapshotAndHealth()
+        } else if (err?.code === 'NO_CREW_AVAILABLE') {
+          addToast(t('toast.noCrewAvailable'), 'error')
+        } else if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
+          addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
         dispatch({ type: 'SET_ALERT_BUSY', payload: { alertId: alert.id, busy: false } })
       }
     },
-    [addToast, t]
+    [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleDismissAlert = useCallback(
@@ -397,14 +486,17 @@ export function DashboardProvider({ children }) {
         })
         addToast(t('toast.alertDismissed'), 'info')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
-          addToast(t('toast.actionError'), 'error')
+        if (err?.code === 'ALERT_NOT_PENDING') {
+          addToast(t('toast.alertNotPending'), 'warning')
+          await loadSnapshotAndHealth()
+        } else if (err?.status !== 429 && err?.status !== 401 && err?.status !== 403) {
+          addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
         dispatch({ type: 'SET_ALERT_BUSY', payload: { alertId: alert.id, busy: false } })
       }
     },
-    [addToast, t]
+    [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleSimCloseRoad = useCallback(
@@ -414,13 +506,15 @@ export function DashboardProvider({ children }) {
         const updated = await simCloseRoad(road.id)
         if (updated?.id) {
           dispatch({ type: 'APPLY_WS_EVENT', payload: { type: 'road.updated', data: updated } })
+        } else {
+          await loadSnapshotAndHealth()
         }
         addToast(t('toast.roadClosed', { road: road.name }), 'warning')
       } catch (err) {
         if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
       }
     },
-    [addToast, t]
+    [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleSimOpenRoad = useCallback(
@@ -430,13 +524,15 @@ export function DashboardProvider({ children }) {
         const updated = await simOpenRoad(road.id)
         if (updated?.id) {
           dispatch({ type: 'APPLY_WS_EVENT', payload: { type: 'road.updated', data: updated } })
+        } else {
+          await loadSnapshotAndHealth()
         }
         addToast(t('toast.roadOpened', { road: road.name }), 'success')
       } catch (err) {
         if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
       }
     },
-    [addToast, t]
+    [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleSimShelterOccupancy = useCallback(
@@ -446,13 +542,15 @@ export function DashboardProvider({ children }) {
         const updated = await simSetShelterOccupancy(shelter.id, percent)
         if (updated?.id) {
           dispatch({ type: 'APPLY_WS_EVENT', payload: { type: 'shelter.updated', data: updated } })
+        } else {
+          await loadSnapshotAndHealth()
         }
         addToast(t('toast.shelterUpdated', { shelter: shelter.name, percent }), 'info')
       } catch (err) {
         if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
       }
     },
-    [addToast, t]
+    [addToast, loadSnapshotAndHealth, t]
   )
 
   const handleSimSosBurst = useCallback(
@@ -471,10 +569,40 @@ export function DashboardProvider({ children }) {
     [addToast, t]
   )
 
+  const handleSimSetProvider = useCallback(
+    async (nextState) => {
+      try {
+        await simSetProvider(nextState)
+        dispatch({
+          type: 'APPLY_WS_EVENT',
+          payload: {
+            type: 'provider.updated',
+            data: {
+              state: nextState,
+              breaker: nextState === 'up' ? 'closed' : state.routingBreaker,
+            },
+          },
+        })
+        addToast(t('toast.providerUpdated', { state: nextState.toUpperCase() }), 'info')
+      } catch (err) {
+        if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
+      }
+    },
+    [addToast, state.routingBreaker, t]
+  )
+
   const handleSimReset = useCallback(async () => {
     try {
-      await simReset()
-      await loadSnapshotAndHealth()
+      const result = await simReset()
+      dispatch({
+        type: 'APPLY_WS_EVENT',
+        payload: { type: 'provider.updated', data: { state: 'up', breaker: 'closed' } },
+      })
+      if (result?.sos && result?.alerts) {
+        dispatch({ type: 'SET_DASHBOARD', payload: result })
+      } else {
+        await loadSnapshotAndHealth()
+      }
       addToast(t('toast.simReset'), 'success')
     } catch (err) {
       if (err?.status !== 429) addToast(t('toast.actionError'), 'error')
@@ -491,9 +619,12 @@ export function DashboardProvider({ children }) {
     handleSimOpenRoad,
     handleSimShelterOccupancy,
     handleSimSosBurst,
+    handleSimSetProvider,
     handleSimReset,
     removeToast,
     setSosFilter: (filter) => dispatch({ type: 'SET_SOS_FILTER', payload: filter }),
+    togglePriorityOnlyFilter: (val) =>
+      dispatch({ type: 'TOGGLE_PRIORITY_ONLY_FILTER', payload: val }),
     focusMap: (focus) => dispatch({ type: 'SET_MAP_FOCUS', payload: focus }),
     setSimTargetCoords: (coords) => dispatch({ type: 'SET_SIM_TARGET_COORDS', payload: coords }),
     toggleAudioMuted: () => dispatch({ type: 'TOGGLE_AUDIO_MUTED' }),

@@ -1,3 +1,4 @@
+import i18n from '../i18n/index.js'
 import {
   mockApproveAlert,
   mockDismissAlert,
@@ -8,6 +9,7 @@ import {
   mockSimCloseRoad,
   mockSimOpenRoad,
   mockSimReset,
+  mockSimSetProvider,
   mockSimSetShelterOccupancy,
   mockSimSosBurst,
 } from './mock.js'
@@ -59,8 +61,16 @@ export function clearSession() {
   }
 }
 
+function withLangParam(path) {
+  const lang = i18n.language || 'az'
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}lang=${encodeURIComponent(lang)}`
+}
+
 async function apiFetch(path, options = {}) {
   const session = getStoredSession()
+  const method = (options.method || 'GET').toUpperCase()
+  const targetPath = method === 'GET' ? withLangParam(path) : path
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
@@ -70,7 +80,7 @@ async function apiFetch(path, options = {}) {
     headers.Authorization = `Bearer ${session.token}`
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${targetPath}`, {
     ...options,
     headers,
   })
@@ -83,27 +93,41 @@ async function apiFetch(path, options = {}) {
     }
     const err = new Error(response.status === 401 ? 'Unauthorized' : 'Forbidden')
     err.status = response.status
+    err.code = response.status === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN'
     throw err
   }
 
   if (response.status === 429) {
-    if (onRateLimitCb) onRateLimitCb()
+    const rawRetryAfter = response.headers.get('Retry-After')
+    const parsedRetry = rawRetryAfter ? Number.parseInt(rawRetryAfter, 10) : NaN
+    const retryAfter = Number.isFinite(parsedRetry) && parsedRetry > 0 ? parsedRetry : null
+    if (onRateLimitCb) onRateLimitCb(retryAfter)
     const err = new Error('Rate limit exceeded')
     err.status = 429
+    err.code = 'RATE_LIMITED'
+    err.retryAfter = retryAfter
     throw err
   }
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`
+    let code = null
     try {
       const payload = await response.json()
-      if (payload?.detail) message = String(payload.detail)
-      else if (payload?.message) message = String(payload.message)
+      if (payload?.error) {
+        if (payload.error.code) code = String(payload.error.code)
+        if (payload.error.message) message = String(payload.error.message)
+      } else if (payload?.detail) {
+        message = String(payload.detail)
+      } else if (payload?.message) {
+        message = String(payload.message)
+      }
     } catch {
       // Non-JSON error body
     }
     const err = new Error(message)
     err.status = response.status
+    err.code = code
     throw err
   }
 
@@ -192,6 +216,14 @@ export async function simSosBurst({ lat, lng, count = 4, type = 'fire' }) {
   return apiFetch('/api/sim/sos-burst', {
     method: 'POST',
     body: JSON.stringify({ lat, lng, count, type }),
+  })
+}
+
+export async function simSetProvider(state) {
+  if (USE_MOCK) return mockSimSetProvider(state)
+  return apiFetch('/api/sim/provider', {
+    method: 'POST',
+    body: JSON.stringify({ state }),
   })
 }
 

@@ -11,6 +11,7 @@ export function Header() {
     user,
     connectionStatus,
     routingProvider,
+    routingBreaker,
     audioMuted,
     simDrawerOpen,
     toggleAudioMuted,
@@ -20,6 +21,21 @@ export function Header() {
 
   const canSimulate = can(user?.role, 'simulate')
   const roleLabel = t(`header.roles.${user?.role}`, { defaultValue: user?.role || '' })
+
+  const isBreakerOpen = routingBreaker === 'open'
+  const providerPillClass =
+    isBreakerOpen || routingProvider === 'down'
+      ? 'status-pill-down'
+      : routingProvider === 'slow'
+        ? 'status-pill-slow'
+        : 'status-pill-up'
+
+  const providerLabel =
+    routingProvider === 'slow'
+      ? t('header.routingSlow')
+      : routingProvider === 'down'
+        ? t('header.routingDown')
+        : t('header.routingUp')
 
   return (
     <header className="ctrl-header">
@@ -44,15 +60,12 @@ export function Header() {
           <span>{connectionStatus === 'live' ? t('header.live') : t('header.reconnecting')}</span>
         </div>
 
-        <div
-          className={`status-pill ${
-            routingProvider === 'up' ? 'status-pill-up' : 'status-pill-down'
-          }`}
-        >
+        <div className={`status-pill ${providerPillClass}`}>
           <span className="status-label-muted">{t('header.routingLabel')}:</span>
-          <strong>
-            {routingProvider === 'up' ? t('header.routingUp') : t('header.routingDown')}
-          </strong>
+          <strong>{providerLabel}</strong>
+          <span className={`breaker-tag ${isBreakerOpen ? 'breaker-open' : 'breaker-closed'}`}>
+            {isBreakerOpen ? t('header.breakerOpen') : t('header.breakerClosed')}
+          </span>
         </div>
 
         <div className="lang-switcher" role="group" aria-label="Language">

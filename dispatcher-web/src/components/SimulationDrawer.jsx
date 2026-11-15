@@ -13,11 +13,14 @@ export function SimulationDrawer() {
     dashboard,
     simDrawerOpen,
     simTargetCoords,
+    routingProvider,
+    routingBreaker,
     toggleSimDrawer,
     handleSimCloseRoad,
     handleSimOpenRoad,
     handleSimShelterOccupancy,
     handleSimSosBurst,
+    handleSimSetProvider,
     handleSimReset,
   } = useDashboard()
 
@@ -40,7 +43,7 @@ export function SimulationDrawer() {
     <section className="sim-drawer" aria-label={t('sim.title')}>
       <div className="sim-drawer-header">
         <div className="sim-drawer-title">
-          <span className="sim-badge">ADMIN SIM</span>
+          <span className="sim-badge">SIM</span>
           <h3>{t('sim.title')}</h3>
         </div>
         <button
@@ -101,7 +104,8 @@ export function SimulationDrawer() {
           >
             {shelters.map((shelter) => (
               <option key={shelter.id} value={shelter.id}>
-                {sanitizeUserNote(shelter.name, 50)} ({shelter.percent}%)
+                {sanitizeUserNote(shelter.name, 50)} (
+                {Math.round(shelter.occupancyPercent ?? shelter.percent ?? 0)}%)
               </option>
             ))}
           </select>
@@ -162,6 +166,42 @@ export function SimulationDrawer() {
               lat: simTargetCoords.lat.toFixed(4),
               lng: simTargetCoords.lng.toFixed(4),
             })}
+          </span>
+        </div>
+
+        <div className="sim-control-card">
+          <span className="sim-label">{t('sim.providerSection')}</span>
+          <div className="sim-provider-row">
+            <button
+              type="button"
+              className={`sim-btn sim-btn-success ${
+                routingProvider === 'up' ? 'sim-btn-active-ring' : ''
+              }`}
+              onClick={() => handleSimSetProvider('up')}
+            >
+              {t('sim.providerUp')}
+            </button>
+            <button
+              type="button"
+              className={`sim-btn sim-btn-warning ${
+                routingProvider === 'slow' ? 'sim-btn-active-ring' : ''
+              }`}
+              onClick={() => handleSimSetProvider('slow')}
+            >
+              {t('sim.providerSlow')}
+            </button>
+            <button
+              type="button"
+              className={`sim-btn sim-btn-danger ${
+                routingProvider === 'down' ? 'sim-btn-active-ring' : ''
+              }`}
+              onClick={() => handleSimSetProvider('down')}
+            >
+              {t('sim.providerDown')}
+            </button>
+          </div>
+          <span className="sim-coords-hint">
+            {routingBreaker === 'open' ? t('header.breakerOpen') : t('header.breakerClosed')}
           </span>
         </div>
 

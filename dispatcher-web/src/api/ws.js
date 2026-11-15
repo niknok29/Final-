@@ -3,16 +3,24 @@ import { subscribeMockEvents } from './mock.js'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
-function buildWsUrl(token) {
+function buildWsUrl(token, lang = 'az') {
   const wsBase = API_BASE_URL.replace(/^http/i, 'ws')
-  return `${wsBase}/ws/dispatcher?token=${encodeURIComponent(token)}`
+  return `${wsBase}/ws/dispatcher?token=${encodeURIComponent(token)}&lang=${encodeURIComponent(lang)}`
 }
 
 /**
  * Connects to the dispatcher realtime stream (Mock or live WebSocket)
- * with exponential backoff reconnect and snapshot resync on reconnection.
+ * with exponential backoff reconnect, snapshot resync on reconnection,
+ * and immediate logout termination on close code 1008.
  */
-export function connectDispatcherWS({ token, onEvent, onStatusChange, onReconnectResync }) {
+export function connectDispatcherWS({
+  token,
+  lang = 'az',
+  onEvent,
+  onStatusChange,
+  onReconnectResync,
+  onAuthFailure,
+}) {
   if (USE_MOCK) {
     onStatusChange?.('live')
     const unsubscribe = subscribeMockEvents((envelope) => {
@@ -43,7 +51,7 @@ export function connectDispatcherWS({ token, onEvent, onStatusChange, onReconnec
     if (closedByCaller || !token) return
 
     try {
-      socket = new WebSocket(buildWsUrl(token))
+      socket = new WebSocket(buildWsUrl(token, lang))
     } catch {
       scheduleReconnect()
       return
@@ -74,10 +82,18 @@ export function connectDispatcherWS({ token, onEvent, onStatusChange, onReconnec
       socket?.close()
     }
 
-    socket.onclose = () => {
-      if (!closedByCaller) {
-        scheduleReconnect()
+    socket.onclose = (event) => {
+      if (closedByCaller) return
+      if (event?.code === 1008) {
+        closedByCaller = true
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer)
+          reconnectTimer = null
+        }
+        onAuthFailure?.()
+        return
       }
+      scheduleReconnect()
     }
   }
 

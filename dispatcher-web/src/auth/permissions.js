@@ -1,5 +1,5 @@
 const ROLE_PERMISSIONS = {
-  dispatcher: new Set(['view_dashboard', 'approve_alert', 'dismiss_alert']),
+  dispatcher: new Set(['view_dashboard', 'approve_alert', 'dismiss_alert', 'simulate']),
   admin: new Set(['view_dashboard', 'approve_alert', 'dismiss_alert', 'simulate']),
 }
 

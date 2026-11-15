@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -9,12 +9,14 @@ import {
   Polyline,
   Popup,
   TileLayer,
+  Tooltip,
   useMap,
   useMapEvents,
 } from 'react-leaflet'
 import { can } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
+import { formatClockTime, formatNumber } from '../utils/time.js'
 
 const BAKU_CENTER = [40.4093, 49.8671]
 const DEFAULT_ZOOM = 12
@@ -48,12 +50,24 @@ const CREW_COLORS = {
 
 const iconCache = new Map()
 
-function getSosIcon(type) {
+function getSosIcon(type, isPriority = false) {
   const safeType = HAZARD_META[type] ? type : 'fire'
-  const key = `sos:${safeType}`
+  const key = `sos:${safeType}:${isPriority ? 'p1' : 'std'}`
   if (iconCache.has(key)) return iconCache.get(key)
 
   const meta = HAZARD_META[safeType]
+  if (isPriority) {
+    const icon = L.divIcon({
+      className: 'custom-div-icon',
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+      popupAnchor: [0, -19],
+      html: `<div class="map-sos-pin map-sos-pin-priority" style="background:${meta.color};">♿</div>`,
+    })
+    iconCache.set(key, icon)
+    return icon
+  }
+
   const icon = L.divIcon({
     className: 'custom-div-icon',
     iconSize: [28, 28],
@@ -65,37 +79,40 @@ function getSosIcon(type) {
   return icon
 }
 
-function getShelterIcon(status, percent) {
+function getShelterIcon(status, percent, accessible = false) {
   const safeStatus = SHELTER_COLORS[status] ? status : 'open'
   const safePct = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)))
-  const key = `shelter:${safeStatus}:${safePct}`
+  const key = `shelter:${safeStatus}:${safePct}:${accessible ? 'acc' : 'std'}`
   if (iconCache.has(key)) return iconCache.get(key)
 
   const color = SHELTER_COLORS[safeStatus]
   const label = safeStatus === 'closed' ? 'OFF' : `${safePct}%`
+  const accTag = accessible ? '<span class="map-acc-badge">♿</span>' : ''
   const icon = L.divIcon({
     className: 'custom-div-icon',
-    iconSize: [44, 24],
-    iconAnchor: [22, 12],
+    iconSize: [accessible ? 58 : 44, 24],
+    iconAnchor: [accessible ? 29 : 22, 12],
     popupAnchor: [0, -12],
-    html: `<div class="map-shelter-pin" style="border-color:${color};"><span class="map-shelter-dot" style="background:${color};"></span><span>${label}</span></div>`,
+    html: `<div class="map-shelter-pin" style="border-color:${color};"><span class="map-shelter-dot" style="background:${color};"></span><span>${label}</span>${accTag}</div>`,
   })
   iconCache.set(key, icon)
   return icon
 }
 
-function getCrewIcon(status) {
+function getCrewIcon(status, accessibleTransport = false) {
   const safeStatus = CREW_COLORS[status] ? status : 'available'
-  const key = `crew:${safeStatus}`
+  const key = `crew:${safeStatus}:${accessibleTransport ? 'acc' : 'std'}`
   if (iconCache.has(key)) return iconCache.get(key)
 
   const color = CREW_COLORS[safeStatus]
+  const symbol = accessibleTransport ? '★♿' : '★'
+  const width = accessibleTransport ? 36 : 26
   const icon = L.divIcon({
     className: 'custom-div-icon',
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
+    iconSize: [width, 26],
+    iconAnchor: [width / 2, 13],
     popupAnchor: [0, -13],
-    html: `<div class="map-crew-pin" style="border-color:${color}; color:${color};">★</div>`,
+    html: `<div class="map-crew-pin" style="width:${width}px; border-color:${color}; color:${color};">${symbol}</div>`,
   })
   iconCache.set(key, icon)
   return icon
@@ -155,11 +172,12 @@ function MapClickHandler({ onSelectCoords }) {
 }
 
 export function CrisisMap() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const {
     user,
     dashboard,
     sosFilter,
+    priorityOnlyFilter,
     mapFocus,
     simTargetCoords,
     simDrawerOpen,
@@ -168,12 +186,28 @@ export function CrisisMap() {
 
   const sosMarkerRefs = useRef({})
   const showSimTarget = can(user?.role, 'simulate') && simDrawerOpen
+  const lang = i18n.language
 
-  const visibleSos = dashboard.sos.filter((item) =>
-    sosFilter === 'all' ? true : item.type === sosFilter
+  const zoneNamesById = useMemo(() => {
+    const map = {}
+    dashboard.zones.forEach((z) => {
+      map[z.id] = z.name
+    })
+    return map
+  }, [dashboard.zones])
+
+  const visibleSos = dashboard.sos.filter((item) => {
+    const matchesHazard = sosFilter === 'all' ? true : item.type === sosFilter
+    if (!matchesHazard) return false
+    if (priorityOnlyFilter) {
+      return item.profile === 'special_needs' || item.priorityRank === 1
+    }
+    return true
+  })
+
+  const overlayRoads = dashboard.roads.filter(
+    (r) => Array.isArray(r.path) && (r.status === 'closed' || r.accessible === false)
   )
-
-  const closedRoads = dashboard.roads.filter((r) => r.status === 'closed' && Array.isArray(r.path))
 
   return (
     <main className="panel panel-map" aria-label="Baku Crisis Map">
@@ -210,7 +244,7 @@ export function CrisisMap() {
                   <div className="map-popup">
                     <strong>{sanitizeUserNote(zone.name, 60)}</strong>
                     <div>
-                      {t('map.popup.activeSos')}: {zone.activeSos}
+                      {t('map.popup.activeSos')}: {formatNumber(zone.activeSos ?? 0, lang)}
                     </div>
                     <div>
                       {t('map.popup.level')}:{' '}
@@ -222,65 +256,110 @@ export function CrisisMap() {
             )
           })}
 
-          {closedRoads.map((road) => (
-            <Polyline
-              key={road.id}
-              positions={road.path}
-              pathOptions={{
-                color: '#ef4444',
-                weight: 5,
-                dashArray: '10 8',
-                opacity: 0.92,
-              }}
-            >
-              <Popup>
-                <div className="map-popup">
-                  <strong>{sanitizeUserNote(road.name, 80)}</strong>
-                  <div>{t('map.popup.roadClosed')}</div>
-                </div>
-              </Popup>
-            </Polyline>
-          ))}
+          {overlayRoads.map((road) => {
+            const isClosed = road.status === 'closed'
+            return (
+              <Polyline
+                key={road.id}
+                positions={road.path}
+                pathOptions={
+                  isClosed
+                    ? {
+                        color: '#ef4444',
+                        weight: 5,
+                        dashArray: '10 8',
+                        opacity: 0.92,
+                      }
+                    : {
+                        color: '#f59e0b',
+                        weight: 4,
+                        dashArray: '4 6',
+                        opacity: 0.78,
+                      }
+                }
+              >
+                <Tooltip sticky>
+                  {sanitizeUserNote(road.name, 60)} •{' '}
+                  {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')} •{' '}
+                  {road.accessible === false ? t('rightPanel.notAccessible') : t('rightPanel.accessible')}
+                </Tooltip>
+                <Popup>
+                  <div className="map-popup">
+                    <strong>{sanitizeUserNote(road.name, 80)}</strong>
+                    <div>
+                      {t('map.popup.status')}:{' '}
+                      {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')}
+                    </div>
+                    <div>
+                      {t('map.popup.accessible')}:{' '}
+                      {road.accessible === false ? t('map.popup.no') : t('map.popup.yes')}
+                    </div>
+                  </div>
+                </Popup>
+              </Polyline>
+            )
+          })}
 
-          {dashboard.shelters.map((shelter) => (
-            <Marker
-              key={shelter.id}
-              position={[shelter.lat, shelter.lng]}
-              icon={getShelterIcon(shelter.status, shelter.percent)}
-            >
-              <Popup>
-                <div className="map-popup">
-                  <strong>{sanitizeUserNote(shelter.name, 80)}</strong>
-                  <div>
-                    {t('map.popup.zone')}: {sanitizeUserNote(shelter.zoneName, 40)}
+          {dashboard.shelters.map((shelter) => {
+            const pct = shelter.occupancyPercent ?? shelter.percent ?? 0
+            return (
+              <Marker
+                key={shelter.id}
+                position={[shelter.lat, shelter.lng]}
+                icon={getShelterIcon(shelter.status, pct, Boolean(shelter.accessible))}
+              >
+                <Popup>
+                  <div className="map-popup">
+                    <strong>
+                      {shelter.accessible ? '♿ ' : ''}
+                      {sanitizeUserNote(shelter.name, 80)}
+                    </strong>
+                    {(shelter.zoneName || zoneNamesById[shelter.zoneId]) && (
+                      <div>
+                        {t('map.popup.zone')}:{' '}
+                        {sanitizeUserNote(shelter.zoneName || zoneNamesById[shelter.zoneId], 40)}
+                      </div>
+                    )}
+                    <div>
+                      {t('map.popup.occupancy')}: {formatNumber(shelter.occupancy ?? 0, lang)} /{' '}
+                      {formatNumber(shelter.capacity ?? 0, lang)} ({formatNumber(Math.round(pct), lang)}
+                      %)
+                    </div>
+                    <div>
+                      {t('map.popup.status')}:{' '}
+                      {t(`rightPanel.shelterStatuses.${shelter.status}`, {
+                        defaultValue: shelter.status,
+                      })}
+                    </div>
+                    <div>
+                      {t('map.popup.accessible')}:{' '}
+                      {shelter.accessible ? t('map.popup.yes') : t('map.popup.no')}
+                    </div>
                   </div>
-                  <div>
-                    {t('map.popup.occupancy')}: {shelter.occupancy} / {shelter.capacity} (
-                    {shelter.percent}%)
-                  </div>
-                  <div>
-                    {t('map.popup.status')}:{' '}
-                    {t(`rightPanel.shelterStatuses.${shelter.status}`, {
-                      defaultValue: shelter.status,
-                    })}
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                </Popup>
+              </Marker>
+            )
+          })}
 
           {dashboard.crews.map((crew) => (
             <Marker
               key={crew.id}
               position={[crew.lat, crew.lng]}
-              icon={getCrewIcon(crew.status)}
+              icon={getCrewIcon(crew.status, Boolean(crew.accessibleTransport))}
             >
               <Popup>
                 <div className="map-popup">
-                  <strong>{sanitizeUserNote(crew.name, 80)}</strong>
+                  <strong>
+                    {crew.accessibleTransport ? '♿ ' : ''}
+                    {sanitizeUserNote(crew.name, 80)}
+                  </strong>
                   <div>
                     {t('map.popup.status')}:{' '}
                     {t(`rightPanel.crewStatuses.${crew.status}`, { defaultValue: crew.status })}
+                  </div>
+                  <div>
+                    {t('map.popup.accessibleTransport')}:{' '}
+                    {crew.accessibleTransport ? t('map.popup.yes') : t('map.popup.no')}
                   </div>
                   {crew.assignedAlertId && (
                     <div>
@@ -292,35 +371,52 @@ export function CrisisMap() {
             </Marker>
           ))}
 
-          {visibleSos.map((item) => (
-            <Marker
-              key={item.id}
-              position={[item.lat, item.lng]}
-              icon={getSosIcon(item.type)}
-              ref={(el) => {
-                if (el) {
-                  sosMarkerRefs.current[item.id] = el
-                } else {
-                  delete sosMarkerRefs.current[item.id]
-                }
-              }}
-            >
-              <Popup>
-                <div className="map-popup">
-                  <strong>
-                    {t(`sos.types.${item.type}`, { defaultValue: item.type })} —{' '}
-                    {sanitizeUserNote(item.zoneName, 40)}
-                  </strong>
-                  <p className="map-popup-note">
-                    {sanitizeUserNote(item.note, 220) || t('sos.noNote')}
-                  </p>
-                  <div className="map-popup-coords">
-                    {Number(item.lat).toFixed(5)}, {Number(item.lng).toFixed(5)}
+          {visibleSos.map((item) => {
+            const isPriority = item.profile === 'special_needs' || item.priorityRank === 1
+            const zoneLabel = sanitizeUserNote(
+              item.zoneName || zoneNamesById[item.zoneId] || item.zoneId || '',
+              40
+            )
+            return (
+              <Marker
+                key={item.id}
+                position={[item.lat, item.lng]}
+                icon={getSosIcon(item.type, isPriority)}
+                zIndexOffset={isPriority ? 600 : 0}
+                ref={(el) => {
+                  if (el) {
+                    sosMarkerRefs.current[item.id] = el
+                  } else {
+                    delete sosMarkerRefs.current[item.id]
+                  }
+                }}
+              >
+                <Popup>
+                  <div className="map-popup">
+                    {isPriority && (
+                      <div className="map-popup-priority">{t('map.popup.priorityCritical')}</div>
+                    )}
+                    <strong>
+                      {t(`sos.types.${item.type}`, { defaultValue: item.type })}
+                      {zoneLabel ? ` — ${zoneLabel}` : ''}
+                    </strong>
+                    <p className="map-popup-note">
+                      {sanitizeUserNote(item.note, 220) || t('sos.noNote')}
+                    </p>
+                    {(item.createdAt || item.ts) && (
+                      <div>
+                        {t('map.popup.reportedAt')}:{' '}
+                        {formatClockTime(item.createdAt || item.ts, lang)}
+                      </div>
+                    )}
+                    <div className="map-popup-coords">
+                      {Number(item.lat).toFixed(5)}, {Number(item.lng).toFixed(5)}
+                    </div>
                   </div>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                </Popup>
+              </Marker>
+            )
+          })}
 
           {showSimTarget && (
             <Marker
@@ -343,6 +439,10 @@ export function CrisisMap() {
             <span className="legend-item">
               <i className="legend-dot legend-critical" />
               {t('map.legend.critical')}
+            </span>
+            <span className="legend-item">
+              <span aria-hidden="true">♿</span>
+              {t('map.legend.prioritySos')}
             </span>
             <span className="legend-item">
               <i className="legend-line-closed" />

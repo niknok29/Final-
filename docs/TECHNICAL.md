@@ -1,37 +1,43 @@
 # Technical Reference — Urban Crisis & Crowd Evacuation Engine
 
-## 1. Core Data Models
+## 1. Core Data Models (Contract v1.2 — Drop 1)
 
 ### Zone (`zones[]`)
 | Field | Type | Description |
 | --- | --- | --- |
-| `id` | `string` | Unique district identifier (e.g., `z-nesimi`) |
-| `name` | `string` | Display district name (`Nəsimi`, `Səbail`, `Nərimanov`, `Xətai`, `Yasamal`) |
+| `id` | `string` | Unique district identifier (e.g., `nasimi` / `z-nesimi`) |
+| `name` | `string` | Localized display district name |
 | `lat`, `lng` | `number` | District centroid coordinates |
 | `radius` | `number` | Circle radius in meters for map visualization |
-| `level` | `'normal' \| 'warning' \| 'critical'` | Severity classification driving circle tint and badge |
+| `level` | `'normal' \| 'warning' \| 'critical'` | Severity classification (`0` normal, `1–2` warning, `>=3` critical) |
 | `activeSos` | `number` | Count of unresolved SOS signals inside the zone |
 
 ### SOS Signal (`sos[]`)
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | `string` | Unique SOS ID |
+| `citizenId` | `string` | Anonymous citizen UUID v4 |
 | `type` | `'fire' \| 'collapse' \| 'flood' \| 'medical'` | Hazard category |
+| `profile` | `'standard' \| 'special_needs'` | Accessibility priority profile |
+| `priority` | `'normal' \| 'critical'` | Priority classification (`critical` for `special_needs`) |
+| `priorityRank` | `1 \| 2` | Sort rank (`1` for `special_needs`, `2` for `standard`) |
 | `lat`, `lng` | `number` | Incident WGS84 coordinates |
 | `zoneId`, `zoneName` | `string` | Matched Baku district |
 | `note` | `string` | Citizen/operator message (sanitized before rendering) |
-| `status` | `'active' \| 'dispatched' \| 'resolved'` | Response lifecycle state |
-| `createdAt` | `string` | ISO-8601 timestamp |
+| `status` | `'active' \| 'resolved'` | Response lifecycle state |
+| `createdAt` | `string` | ISO-8601 UTC timestamp |
 
 ### Shelter (`shelters[]`)
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | `string` | Shelter ID |
-| `name` | `string` | Shelter facility name |
+| `name` | `string` | Localized shelter facility name |
+| `kind` | `'shelter' \| 'park' \| 'stadium'` | Facility category |
 | `lat`, `lng` | `number` | Facility coordinates |
 | `capacity`, `occupancy` | `number` | Maximum capacity and current headcount |
-| `percent` | `number` | Occupancy percentage (`0–100`) |
+| `occupancyPercent` / `percent` | `number` | Occupancy percentage (`0–100`) |
 | `status` | `'open' \| 'filling' \| 'near_full' \| 'full' \| 'closed'` | Color thresholds: `<75` green (`open`), `75–89` yellow (`filling`), `90–99` orange (`near_full`), `>=100` red (`full`), or `closed` (gray reserve) |
+| `accessible` | `boolean` | Step-free / ramp accessibility flag (`♿`) |
 
 ### Response Crew (`crews[]`)
 | Field | Type | Description |
@@ -41,48 +47,73 @@
 | `lat`, `lng` | `number` | Current unit position |
 | `status` | `'available' \| 'dispatched' \| 'busy'` | Readiness state |
 | `assignedAlertId` | `string \| null` | Active Red Alert assignment |
+| `accessibleTransport` | `boolean` | Equipped with wheelchair/medical accessible transport (`♿`) |
 
 ### Red Alert (`alerts[]`)
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | `string` | Alert ID |
+| `level` | `'red'` | Alert severity level |
+| `kind` | `'SOS_CLUSTER' \| 'SHELTER_OVERLOAD' \| 'PRIORITY_SOS'` | Detection trigger source |
 | `status` | `'pending' \| 'approved' \| 'dismissed'` | Workflow state |
-| `type` | `'sos_cluster' \| 'shelter_overload'` | Detection trigger source |
-| `zoneId`, `zoneName`, `lat`, `lng` | `string \| number` | Incident focus location |
-| `trigger` | `string` | Human-readable rule summary (e.g., `4 SOS / 5 dəq / 500 m`, `Toplanış məntəqəsi 96%`) |
-| `proposal` | `object` | Recommended `crewId`/`crewName` + `openShelterId`/`openShelterName` |
+| `code` | `string` | Machine code (`RED_ALERT_SEND_CREW_OPEN_SHELTER` or `PRIORITY_SOS_DISPATCH_ACCESSIBLE_TRANSPORT`) |
+| `zoneId`, `lat`, `lng` | `string \| number` | Incident focus location |
+| `details` | `object` | Trigger metadata (`sosCount`, `windowMinutes`, `radiusMeters`, `shelterId`, `occupancyPercent`, `sosId`) |
+| `proposal` | `object` | Recommended `crewId`/`crewName` + `newShelterId`/`newShelterName` (`null` for `PRIORITY_SOS`) |
 
 ### Road (`roads[]`)
 | Field | Type | Description |
 | --- | --- | --- |
 | `id`, `name` | `string` | Road identifier and avenue name |
 | `status` | `'open' \| 'closed'` | Closed roads render on the map as red dashed polylines |
+| `accessible` | `boolean` | Indicates step-free accessible path (`false` roads render with amber warning overlays) |
 | `path` | `Array<[number, number]>` | Polyline vertices (`[[lat, lng], ...]`) |
 
 ---
 
-## 2. Crisis Clustering & Overload Decision Engine
+## 2. Drop 1 Priority SOS, Clustering & Overload Decision Engine
 
-1. **Spatial-Temporal SOS Clustering (`4 SOS / 5 min / 500 m`):**
-   - Incoming SOS reports are grouped by proximity (`<= 500 m`) within a rolling `5 minute` window.
-   - When a cluster reaches `>= 4` active signals, the zone escalates to `critical` and emits an `alert.created` Red Alert proposing the nearest `available` crew and a `closed` reserve shelter (or lowest-occupancy open shelter) for activation.
-2. **Shelter Overload Detection (`>= 90%`):**
-   - When shelter occupancy hits `>= 90%` (`near_full` / `full`), a Red Alert is generated identifying the overloaded facility and proposing an alternate reserve shelter + crowd-management crew.
-3. **Human-in-the-Loop Approval:**
-   - Dispatchers retain authority via **"Təsdiq et"** (`POST /api/alerts/{id}/approve`) or **"Ləğv et"** (`POST /api/alerts/{id}/dismiss`). Approval atomically dispatches the crew, opens the reserve shelter, updates live stats, and flies the map to the incident.
+1. **Priority SOS (`special_needs` / Rank 1):**
+   - SOS reports with `profile: "special_needs"` receive `priority: "critical"` and `priorityRank: 1`.
+   - The Dispatcher feed sorts strictly by `priorityRank` ascending first, then newest `createdAt` first, pinning Priority #1 cards to the top with a crimson left border, `♿ PRİORİTET #1` badge, and a dedicated `"Priority only"` toggle.
+   - Map markers for Priority SOS render larger (`36x36`) with a pulsing highlight and `♿` symbol.
+   - Every `special_needs` SOS immediately raises a `PRIORITY_SOS` alert (`PRIORITY_SOS_DISPATCH_ACCESSIBLE_TRANSPORT`) proposing an available crew with `accessibleTransport: true` and `newShelterId: null` (no reserve shelter opened).
+2. **Spatial-Temporal SOS Clustering (`4 SOS / 5 min / 500 m`):**
+   - Incoming active SOS reports from `>= 4` distinct citizens within `500 m` and `5 minutes` trigger a `SOS_CLUSTER` Red Alert proposing the nearest available crew and a closed reserve shelter.
+3. **Shelter Overload Detection (`> 95%`):**
+   - When shelter occupancy breaches threshold, a `SHELTER_OVERLOAD` Red Alert proposes crowd-control dispatch and reserve shelter activation.
+4. **Human-in-the-Loop Approval:**
+   - Dispatchers act via **"Təsdiq et"** (`POST /api/alerts/{id}/approve`) or **"Ləğv et"** (`POST /api/alerts/{id}/dismiss`). On `PRIORITY_SOS`, approval dispatches the accessible-transport crew while gracefully skipping shelter opening (`newShelter: null`).
 
 ---
 
-## 3. Security, RBAC & Fallback Handling
+## 3. Security, Contract Errors & Fallback Handling
 
 - **Role-Based Access Control (`src/auth/permissions.js`):**
-  - `can(role, action)` checks a declarative permission set (`dispatcher` can view and approve/dismiss alerts; `admin` adds `simulate`). Extending for additional roles takes <5 lines.
-- **Token Handling:**
-  - JWTs and user metadata are stored exclusively in `sessionStorage` and in-memory state — never `localStorage`. Any `401`/`403` from protected endpoints immediately clears the session and returns to `LoginPage`.
+  - `can(role, action)` checks a declarative permission set matching `backend/app/auth.py` (both `dispatcher` and `admin` may view live telemetry, approve/dismiss alerts, and trigger `simulate` scenarios). Extending for additional roles (e.g., read-only observer) takes <5 lines.
+- **Token & WebSocket `1008` Handling:**
+  - JWTs and user metadata are stored exclusively in `sessionStorage` and in-memory state — never `localStorage`.
+  - HTTP `401`/`403` and WebSocket close code `1008` (invalid/expired token or missing permission) immediately clear `sessionStorage`, halt reconnect loops, and redirect to `LoginPage`.
+- **Conflict & Rate Limit Error Codes:**
+  - `ALERT_NOT_PENDING` (`409`): displays a warning toast and triggers snapshot resync.
+  - `NO_CREW_AVAILABLE` (`409`): notifies dispatchers that no eligible crew (or accessible transport unit) is free.
+  - `RATE_LIMITED` (`429`): respects the `Retry-After` response header when provided, displaying a non-blocking warning toast with retry timing.
 - **XSS Prevention:**
   - `dangerouslySetInnerHTML` is strictly forbidden across the codebase.
-  - All user-supplied notes pass through `sanitizeUserNote()` (stripping control characters and enforcing bounds) before JSX interpolation. Leaflet `divIcon` HTML uses only internal enums and numeric percentages.
-- **Routing Provider Health & Fallback:**
-  - `GET /api/health` is polled every 20 seconds and on reconnect. If `routingProvider` drops to `down`, the header badge turns red (`DOWN`) to warn dispatchers while map visualization, manual crew dispatch, and road-closure overlays remain fully operational.
-- **Rate Limiting (`429`):**
-  - HTTP `429` responses trigger a non-blocking warning toast (`toast.rateLimit`) without tearing down the WebSocket session.
+  - All user-supplied notes pass through `sanitizeUserNote()` before JSX interpolation; Leaflet `divIcon` HTML contains only internal enums, `♿` indicators, and numeric percentages.
+- **Dynamic i18n (`AZ` / `EN` / `RU`):**
+  - Switching language updates `<html lang="...">`, persists in `sessionStorage`, appends `?lang=` and `&lang=` to backend GET/WS requests, and formats numbers/timestamps via `Intl.NumberFormat` and `Intl.DateTimeFormat`.
+
+---
+
+## 4. Routing Provider Outage, Circuit Breaker & Simulation (Section J)
+
+- **Health Initialization & Live Telemetry (`GET /api/health` + `WS provider.updated`):**
+  - On initial load and WebSocket reconnect (`onReconnectResync`), `getHealth()` queries `GET /api/health`, receiving `{ status, routingProvider: "up" | "down" | "slow", breaker: "closed" | "open" }`.
+  - Live WebSocket `provider.updated` events (`{ state: "up" | "down" | "slow", breaker: "closed" | "open" }`) immediately update `routingProvider` and `routingBreaker` in `DashboardContext` without reloading.
+- **Backend Circuit Breaker & Haversine Fallback (`backend/app/routing.py`):**
+  - Supports `MockProvider` (default) or `OsrmProvider` (`ROUTING_PROVIDER=osrm`, optional `MOCK_ROUTING_DOWN=1`).
+  - `CircuitBreaker(threshold=3, cooldown=30.0)` with a `2.0s` upstream request timeout (and `3.0s` simulated delay in `slow` mode) opens after 3 failures for a 30-second cooldown, serving Haversine straight-line `"fallback"` routes so route queries remain non-blocking.
+- **Header Pill & Simulation Controls (`Header.jsx` & `SimulationDrawer.jsx`):**
+  - `Header.jsx` displays the color-coded Routing Provider pill (`UP` green, `SLOW` amber, `DOWN` red) alongside the live circuit breaker badge (`breaker: closed` / `breaker: open`).
+  - `SimulationDrawer.jsx` exposes **Up**, **Slow**, and **Down** controls wired to `POST /api/sim/provider` (`{"state": "up" | "down" | "slow"}`) with active-state highlighting and toast confirmation; `POST /api/sim/reset` restores `up` / `closed` state.
