@@ -91,18 +91,21 @@ function applyProviderTelemetry(state, payload) {
   if (!payload || typeof payload !== 'object') return state
   const rawProvider = payload.state || payload.routingProvider
   const rawStatus = payload.status
+  const rawDegraded =
+    typeof payload.degraded === 'boolean' ? payload.degraded : rawStatus === 'degraded'
   const rawBreaker = payload.breaker
   const rawOffline = payload.offline
 
   if (
     rawProvider === 'up' &&
-    rawStatus !== 'degraded' &&
+    !rawDegraded &&
     rawBreaker !== 'open' &&
     !rawOffline
   ) {
     return {
       ...state,
       healthStatus: 'ok',
+      routingDegraded: false,
       routingProvider: 'up',
       routingBreaker: 'closed',
       routingOffline: false,
@@ -125,11 +128,19 @@ function applyProviderTelemetry(state, payload) {
     } else {
       nextProvider = 'down'
     }
-  } else if (rawStatus === 'degraded') {
+  } else if (rawDegraded) {
     nextProvider = state.routingProvider !== 'up' ? state.routingProvider : 'degraded'
   } else if (rawBreaker === 'open' && state.routingProvider === 'up') {
     nextProvider = 'down'
   }
+
+  const nextDegraded =
+    typeof payload.degraded === 'boolean'
+      ? payload.degraded
+      : rawStatus === 'degraded' ||
+        nextProvider !== 'up' ||
+        nextBreaker === 'open' ||
+        Boolean(rawOffline)
 
   const nextOffline =
     typeof rawOffline === 'boolean'
@@ -141,7 +152,7 @@ function applyProviderTelemetry(state, payload) {
       ? 'static_matrix'
       : nextProvider === 'slow'
         ? 'cache'
-        : nextOffline
+        : nextOffline || nextDegraded
           ? 'straight_line'
           : null
 
@@ -157,16 +168,12 @@ function applyProviderTelemetry(state, payload) {
         : null
       : { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null }
 
-  const nextHealthStatus =
-    rawStatus === 'ok' || rawStatus === 'degraded'
-      ? rawStatus
-      : nextProvider === 'up' && nextBreaker === 'closed' && !nextOffline
-        ? 'ok'
-        : 'degraded'
+  const nextHealthStatus = nextDegraded ? 'degraded' : 'ok'
 
   return {
     ...state,
     healthStatus: nextHealthStatus,
+    routingDegraded: nextDegraded,
     routingProvider: nextProvider,
     routingBreaker: nextBreaker,
     routingOffline: nextOffline,
@@ -183,6 +190,7 @@ function createInitialState() {
     loadingDashboard: Boolean(stored),
     connectionStatus: 'live',
     healthStatus: 'ok',
+    routingDegraded: false,
     routingProvider: 'up',
     routingBreaker: 'closed',
     routingOffline: false,
@@ -255,6 +263,16 @@ function reducer(state, action) {
       if (!type || !data) return state
       if (type === 'provider.updated') {
         return applyProviderTelemetry(state, data)
+      }
+      if (type === 'reroute') {
+        if (
+          data.offline !== undefined ||
+          data.fallbackMode !== undefined ||
+          data.notice !== undefined
+        ) {
+          return applyProviderTelemetry(state, data)
+        }
+        return state
       }
       const d = state.dashboard
       let next = d
@@ -684,7 +702,8 @@ export function DashboardProvider({ children }) {
               ...(res && typeof res === 'object' ? res : {}),
               state: nextState,
               routingProvider: nextState,
-              status: nextState === 'up' ? 'ok' : 'degraded',
+              status: 'ok',
+              degraded: nextState !== 'up',
               breaker: inferredBreaker,
               offline: nextState === 'down' || nextState === 'http503',
               fallbackMode: res?.fallbackMode ?? inferredFallback,
@@ -711,6 +730,7 @@ export function DashboardProvider({ children }) {
             state: 'up',
             routingProvider: 'up',
             status: 'ok',
+            degraded: false,
             breaker: 'closed',
             offline: false,
             fallbackMode: null,

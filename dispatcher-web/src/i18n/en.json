@@ -32,8 +32,8 @@
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
     "backupModeTag": "OFFLINE / BACKUP ROUTE MODE",
-    "backupModeNotice": "Offline / backup route mode — external routing provider is unavailable (HTTP 503), fallback routing is active",
-    "backupModeSlowNotice": "Offline / backup route mode — external routing provider is slow (>5s), fallback routing is active",
+    "backupModeNotice": "Offline / backup route mode is active",
+    "backupModeSlowNotice": "Offline / backup route mode is active",
     "fallbackModes": {
       "cache": "fallback: cache",
       "static_matrix": "fallback: static_matrix",
@@ -47,6 +47,9 @@
       "dispatcher": "Dispatcher",
       "admin": "Admin"
     }
+  },
+  "notices": {
+    "OFFLINE_BACKUP_ROUTE_MODE": "Offline / backup route mode is active"
   },
   "stats": {
     "activeSos": "Active SOS",

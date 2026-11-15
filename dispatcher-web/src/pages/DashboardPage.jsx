@@ -13,6 +13,7 @@ export function DashboardPage() {
   const { t } = useTranslation()
   const {
     healthStatus,
+    routingDegraded,
     routingProvider,
     routingBreaker,
     routingOffline,
@@ -20,45 +21,44 @@ export function DashboardPage() {
     routingNotice,
   } = useDashboard()
 
-  const isHardOutage =
+  const isWarningActive =
+    routingNotice?.code === 'OFFLINE_BACKUP_ROUTE_MODE' ||
     routingOffline === true ||
-    routingBreaker === 'open' ||
-    routingProvider === 'down' ||
-    routingProvider === 'http503' ||
-    routingNotice?.code === 'OFFLINE_BACKUP_ROUTE_MODE'
-  const showBackupRouteBanner =
-    isHardOutage ||
+    routingDegraded === true ||
     healthStatus === 'degraded' ||
+    routingProvider === 'down' ||
     routingProvider === 'slow' ||
-    routingProvider === 'degraded'
-  const isSlowOnly =
-    routingProvider === 'slow' &&
-    routingBreaker !== 'open' &&
-    !routingOffline &&
-    routingNotice?.code !== 'OFFLINE_BACKUP_ROUTE_MODE'
+    routingProvider === 'http503' ||
+    routingProvider === 'degraded' ||
+    routingBreaker === 'open'
+
+  const noticeCode = routingNotice?.code || 'OFFLINE_BACKUP_ROUTE_MODE'
+  const noticeText = t(`notices.${noticeCode}`, {
+    defaultValue: t('header.backupModeNotice'),
+  })
 
   const stateChipLabel =
     routingProvider === 'http503'
       ? 'HTTP 503'
-      : String(routingProvider || healthStatus || 'degraded').toUpperCase()
+      : String(routingProvider || (routingDegraded ? 'degraded' : healthStatus) || 'down').toUpperCase()
 
   return (
     <div className="dashboard-shell">
       <Header />
       <StatsBar />
-      {showBackupRouteBanner && (
+      {isWarningActive && (
         <div
           className={`backup-route-banner ${
-            isSlowOnly ? 'backup-route-banner-slow' : 'backup-route-banner-down'
+            routingBreaker === 'open' || routingProvider === 'http503'
+              ? 'backup-route-banner-critical'
+              : 'backup-route-banner-warning'
           }`}
           role="status"
           aria-live="polite"
         >
           <div className="backup-route-banner-left">
             <span className="backup-route-tag">{t('header.backupModeTag')}</span>
-            <span className="backup-route-text">
-              {isSlowOnly ? t('header.backupModeSlowNotice') : t('header.backupModeNotice')}
-            </span>
+            <span className="backup-route-text">{noticeText}</span>
           </div>
           <div className="backup-route-banner-right">
             <span className="backup-route-chip">{stateChipLabel}</span>

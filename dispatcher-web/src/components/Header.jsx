@@ -11,6 +11,7 @@ export function Header() {
     user,
     connectionStatus,
     healthStatus,
+    routingDegraded,
     routingProvider,
     routingBreaker,
     routingOffline,
@@ -32,7 +33,8 @@ export function Header() {
     routingProvider === 'http503'
   const isDegradedOrSlow =
     !isHardOutage &&
-    (routingProvider === 'slow' ||
+    (routingDegraded ||
+      routingProvider === 'slow' ||
       routingProvider === 'degraded' ||
       healthStatus === 'degraded')
 
@@ -49,7 +51,7 @@ export function Header() {
         ? t('header.routingDown')
         : routingProvider === 'slow'
           ? t('header.routingSlow')
-          : routingProvider === 'degraded' || healthStatus === 'degraded'
+          : routingDegraded || routingProvider === 'degraded' || healthStatus === 'degraded'
             ? t('header.routingDegraded')
             : t('header.routingUp')
 

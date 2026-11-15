@@ -32,8 +32,8 @@
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
     "backupModeTag": "OFLAYN / EHTİYAT MARŞRUT REJİMİ",
-    "backupModeNotice": "Oflayn / ehtiyat marşrut rejimi — xarici naviqasiya xidməti əlçatan deyil (HTTP 503), ehtiyat marşrutlaşdırma aktivdir",
-    "backupModeSlowNotice": "Oflayn / ehtiyat marşrut rejimi — xarici naviqasiya xidməti ləngiyir (>5 san), ehtiyat marşrutlaşdırma aktivdir",
+    "backupModeNotice": "Oflayn / Ehtiyat marşrut rejimində işləyir",
+    "backupModeSlowNotice": "Oflayn / Ehtiyat marşrut rejimində işləyir",
     "fallbackModes": {
       "cache": "rejim: cache",
       "static_matrix": "rejim: static_matrix",
@@ -47,6 +47,9 @@
       "dispatcher": "Dispetçer",
       "admin": "Admin"
     }
+  },
+  "notices": {
+    "OFFLINE_BACKUP_ROUTE_MODE": "Oflayn / Ehtiyat marşrut rejimində işləyir"
   },
   "stats": {
     "activeSos": "Aktiv SOS",

@@ -857,12 +857,14 @@ export async function mockGetRoads() {
 }
 
 function buildMockProviderHealth() {
-  if (providerState === 'up' && breakerState === 'closed') {
+  const isHealthy = providerState === 'up' && breakerState === 'closed'
+  if (isHealthy) {
     return {
       status: 'ok',
       state: 'up',
       routingProvider: 'up',
       breaker: 'closed',
+      degraded: false,
       offline: false,
       fallbackMode: null,
       notice: null,
@@ -870,10 +872,11 @@ function buildMockProviderHealth() {
   }
   if (providerState === 'slow') {
     return {
-      status: 'degraded',
+      status: 'ok',
       state: 'slow',
       routingProvider: 'slow',
       breaker: breakerState,
+      degraded: true,
       offline: false,
       fallbackMode: fallbackModeState || 'cache',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
@@ -881,20 +884,22 @@ function buildMockProviderHealth() {
   }
   if (providerState === 'http503') {
     return {
-      status: 'degraded',
+      status: 'ok',
       state: 'http503',
       routingProvider: 'http503',
       breaker: 'open',
+      degraded: true,
       offline: true,
       fallbackMode: fallbackModeState || 'static_matrix',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
     }
   }
   return {
-    status: 'degraded',
+    status: 'ok',
     state: 'down',
     routingProvider: 'down',
     breaker: 'open',
+    degraded: true,
     offline: true,
     fallbackMode: fallbackModeState || 'straight_line',
     notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },

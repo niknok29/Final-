@@ -113,7 +113,7 @@
   - `apiFetch` wraps all requests in an 8-second `AbortController` timeout so simulated `>5s` upstream latency never stalls or crashes the UI.
   - `simSetProvider(state)` sends `"up" | "down" | "slow" | "http503"` to `POST /api/sim/provider` and automatically falls back from `"http503"` to `{"state": "down"}` on HTTP `400`/`422` if running against a pre-Section-K backend.
 - **Health Initialization & Live Telemetry (`GET /api/health` + `WS provider.updated`):**
-  - On initial load, 20-second polling, and WebSocket reconnect (`onReconnectResync`), `getHealth()` / `provider.updated` normalize `{ status: "ok" | "degraded", routingProvider: "up" | "down" | "slow" | "http503" | "degraded", breaker: "closed" | "open", offline: boolean, fallbackMode: null | "cache" | "static_matrix" | "straight_line", notice: null | { code: "OFFLINE_BACKUP_ROUTE_MODE", message } }` defensively in `DashboardContext`.
+  - On initial load, 20-second polling, and WebSocket reconnect (`onReconnectResync`), `getHealth()` / `provider.updated` normalize `{ status: "ok", routingProvider: "up" | "down" | "slow" | "http503", breaker: "closed" | "open", degraded: boolean, offline?: boolean, fallbackMode?: null | "cache" | "static_matrix" | "straight_line", notice?: null | { code: "OFFLINE_BACKUP_ROUTE_MODE", message } }` defensively in `DashboardContext`.
 - **Backend Circuit Breaker & Fallback Modes (`backend/app/routing.py`):**
   - Supports `MockProvider` (default) or `OsrmProvider` (`ROUTING_PROVIDER=osrm`, optional `MOCK_ROUTING_DOWN=1`).
   - `CircuitBreaker` trips on repeated failures/timeouts, falling back safely across `cache`, `static_matrix`, or Haversine `straight_line` strategies without blocking dispatchers.
