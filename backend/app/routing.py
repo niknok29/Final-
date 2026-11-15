@@ -1,15 +1,24 @@
-"""Routing providers (mock / OSRM) behind a circuit breaker, with a Haversine straight-line fallback."""
+"""Routing providers (mock / OSRM) behind a circuit breaker, with LOCAL backup data when the provider is down:
+route cache -> static district x shelter matrix -> straight-line Haversine."""
+import logging
 import os
+import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
 from .util import haversine
 
+log = logging.getLogger("crisis.routing")
+
 SPEED = 30 / 3.6  # m/s, ~30 km/h city speed
 TIMEOUT = 2.0  # seconds: hard cap for one provider call (a request never waits longer for the provider)
-SLOW_DELAY = 3.0  # simulated latency in the "slow" state; >= TIMEOUT means the call times out
+SLOW_DELAY = 6.0  # simulated latency in the "slow" state (> 5 s); >= TIMEOUT means our own timeout fires first
+DETOUR = 1.3  # detour factor applied to straight-line distances in the static matrix
+CACHE_SIZE = 500
+CELL_LAT, CELL_LNG = 0.0018, 0.00236  # ~200 m grid around Baku
 
 
 class ProviderError(Exception):
@@ -82,13 +91,14 @@ class OsrmProvider:
             ]
         except ProviderError:
             raise
-        except Exception as e:  # timeout, network error, bad status, unexpected payload
+        except Exception as e:  # HTTP 503, timeout, network error, unexpected payload
             raise ProviderError(f"{type(e).__name__}: {e}") from e
 
 
 provider = OsrmProvider() if os.getenv("ROUTING_PROVIDER", "mock").lower() == "osrm" else MockProvider()
 breaker = CircuitBreaker()
-state = "down" if os.getenv("MOCK_ROUTING_DOWN") == "1" else "up"  # forced via POST /api/sim/provider: up | down | slow
+STATES = ("up", "down", "slow", "http503")
+state = "down" if os.getenv("MOCK_ROUTING_DOWN") == "1" else "up"  # forced via POST /api/sim/provider
 listener = None  # called with {"state","breaker"} whenever that snapshot changes (realtime hooks in here)
 
 
@@ -113,7 +123,7 @@ def routing_up() -> bool:
 
 
 def set_state(new: str):
-    """Force the provider into outage / latency mode (or back to normal, which also closes the breaker)."""
+    """Force the provider into an outage / latency mode (or back to normal, which also closes the breaker)."""
     global state
     state = new
     if new == "up":
@@ -124,26 +134,101 @@ def set_state(new: str):
 def _simulate():
     if state == "down":
         raise ProviderError("simulated outage")
+    if state == "http503":
+        raise ProviderError("HTTPStatusError: 503 Service Unavailable (simulated)")
     if state == "slow":
         time.sleep(min(SLOW_DELAY, TIMEOUT))
         if SLOW_DELAY >= TIMEOUT:
             raise ProviderError("simulated timeout")
 
 
-def plan(a, b, ctx: dict | None = None):
-    """Returns (main_route, alternatives, source). Falls back to a straight line when the provider is
-    unavailable. `ctx` is shared by all calls of one request: after one failure the rest skip the provider,
-    so a request waits for a failing provider at most once (<= TIMEOUT)."""
+# ---- local backup data ----
+_lock = threading.Lock()
+cache: OrderedDict = OrderedDict()  # (shelterId, origin grid cell) -> last successful main route
+MATRIX: dict = {}  # (districtId, shelterId) -> route estimate
+_DISTRICTS: list = []  # [(id, lat, lng)]
+
+
+def clear_cache():
+    with _lock:
+        cache.clear()
+
+
+def _cell(a):
+    return (round(a[0] / CELL_LAT), round(a[1] / CELL_LNG))
+
+
+def build_matrix(s):
+    """Precompute a route for every district centroid x shelter (mock polyline, DETOUR on distance/duration)."""
+    from sqlmodel import select
+
+    from .models import District, Shelter
+
+    districts, shelters = s.exec(select(District)).all(), s.exec(select(Shelter)).all()
+    matrix = {}
+    for d in districts:
+        for sh in shelters:
+            r = _pack(MockProvider._via((d.lat, d.lng), (sh.lat, sh.lng), 0.12))
+            dist = (r["distanceMeters"]) * DETOUR
+            matrix[(d.id, sh.id)] = {**r, "distanceMeters": round(dist), "durationSec": round(dist / SPEED)}
+    with _lock:
+        MATRIX.clear()
+        MATRIX.update(matrix)
+        _DISTRICTS[:] = [(d.id, d.lat, d.lng) for d in districts]
+
+
+def nearest_district_id(a):
+    return min(_DISTRICTS, key=lambda d: haversine(a[0], a[1], d[1], d[2]))[0] if _DISTRICTS else None
+
+
+def _from(a, r):
+    return {**r, "path": [list(a)] + r["path"][1:]}  # start the stored polyline at the real origin
+
+
+def _remember(a, shelter_id, route):
+    with _lock:
+        key = (shelter_id, _cell(a))
+        cache[key] = route
+        cache.move_to_end(key)
+        while len(cache) > CACHE_SIZE:
+            cache.popitem(last=False)
+
+
+def _backup(a, b, shelter_id):
+    """Returns (route, fallbackMode): cache -> static_matrix -> straight_line."""
+    if shelter_id:
+        with _lock:
+            key = (shelter_id, _cell(a))
+            hit = cache.get(key)
+            if hit:
+                cache.move_to_end(key)
+                return _from(a, hit), "cache"
+            did = nearest_district_id(a)
+            m = MATRIX.get((did, shelter_id))
+        if m:
+            return _from(a, m), "static_matrix"
+    return _pack([list(a), list(b)]), "straight_line"
+
+
+def plan(a, b, ctx: dict | None = None, shelter_id: str | None = None):
+    """Returns (main_route, alternatives, source, fallback_mode). Never raises: when the provider is
+    unavailable (outage, HTTP 503, timeout, any error, open breaker) local backup data is used.
+    `ctx` is shared by all calls of one request: after one failure the rest skip the provider, so a request
+    waits for a failing provider at most once (<= TIMEOUT)."""
     ctx = ctx if ctx is not None else {}
     if not ctx.get("failed") and not breaker.is_open:
         try:
             _simulate()
             routes = provider.route(a, b)
             breaker.success()
+            if shelter_id:
+                _remember(a, shelter_id, routes[0])
             _changed()
-            return routes[0], [{"label": f"Alternativ {i}", **r} for i, r in enumerate(routes[1:], 1)], "provider"
-        except Exception:
+            return routes[0], [{"label": f"Alternativ {i}", **r} for i, r in enumerate(routes[1:], 1)], "provider", None
+        except Exception as e:
+            log.warning("routing provider failed (%s: %s) - using local backup data", type(e).__name__, e)
             ctx["failed"] = True
             breaker.failure()
             _changed()
-    return _pack([list(a), list(b)]), [], "fallback"
+    route, mode = _backup(a, b, shelter_id)
+    return route, [], "fallback", mode

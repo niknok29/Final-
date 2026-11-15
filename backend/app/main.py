@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,6 +13,7 @@ from .api import router
 from .db import init_db
 from .util import ApiError
 
+log = logging.getLogger("crisis")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -22,6 +24,18 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Crisis Evac Engine", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _catch_all(request: Request, call_next):
+    """Registered BEFORE the CORS middleware, so it sits inside it: unexpected errors still get CORS headers
+    and the standard error JSON (no stack trace in the body)."""
+    try:
+        return await call_next(request)
+    except Exception:
+        return _internal(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5174"],
@@ -33,6 +47,16 @@ for r in (router, auth.router, dispatch.router, sim.router, realtime.router):
 
 def _err(status: int, code: str, message: str, headers: dict | None = None):
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status, headers=headers)
+
+
+def _internal(request: Request):
+    log.exception("unhandled error on %s %s", request.method, request.url.path)
+    return _err(500, "INTERNAL_ERROR", "Internal server error")
+
+
+@app.exception_handler(Exception)  # safety net for anything that escapes the middleware above
+async def _unhandled(request: Request, _: Exception):
+    return _internal(request)
 
 
 @app.exception_handler(ApiError)

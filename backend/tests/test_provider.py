@@ -13,7 +13,8 @@ def token(headers):
 
 def test_outage_fallback_breaker_and_recovery(client, headers):
     assert client.get("/api/route", params=Q).json()["source"] == "provider"
-    assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed"}
+    assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed",
+                                                "degraded": False}
     assert client.post("/api/sim/provider", json={"state": "down"}).status_code == 401  # needs a token
 
     with client.websocket_connect("/ws/dispatcher?token=" + token(headers)) as ws:
@@ -31,7 +32,8 @@ def test_outage_fallback_breaker_and_recovery(client, headers):
 
         client.post("/api/sim/provider", headers=headers, json={"state": "up"})  # recovery closes the breaker
         assert ws.receive_json()["data"] == {"state": "up", "breaker": "closed"}
-    assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed"}
+    assert client.get("/api/health").json() == {"status": "ok", "routingProvider": "up", "breaker": "closed",
+                                                "degraded": False}
     assert client.get("/api/route", params=Q).json()["source"] == "provider"
 
 
@@ -71,8 +73,8 @@ def test_osrm_provider_parsing_and_failures(monkeypatch):
     routing.set_state("up")
 
     handler.mode = "ok"
-    main, alts, src = routing.plan((40.41, 49.86), (40.40, 49.85))
-    assert src == "provider" and seen[0] == "/route/v1/driving/49.86,40.41;49.85,40.4"  # lng,lat order
+    main, alts, src, mode = routing.plan((40.41, 49.86), (40.40, 49.85))
+    assert src == "provider" and mode is None and seen[0] == "/route/v1/driving/49.86,40.41;49.85,40.4"  # lng,lat order
     assert main == {"distanceMeters": 1234, "durationSec": 123, "path": [[40.41, 49.86], [40.4, 49.85]]}  # lat,lng out
     assert len(alts) == 1 and alts[0]["label"] == "Alternativ 1"
 
