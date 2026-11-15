@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { can } from '../auth/permissions.js'
+import { canDispatch } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 
@@ -42,10 +42,13 @@ export function RedAlertBanner() {
     return map
   }, [dashboard.zones])
 
-  const pendingAlerts = dashboard.alerts.filter((a) => a.status === 'pending')
+  const pendingAlerts = useMemo(
+    () => dashboard.alerts.filter((a) => a.status === 'pending'),
+    [dashboard.alerts]
+  )
   if (!pendingAlerts.length) return null
 
-  const canAct = can(user?.role, 'approve_alert') && can(user?.role, 'dismiss_alert')
+  const canAct = canDispatch(user)
 
   return (
     <section className="red-alert-stack" aria-label={t('alerts.redAlert')}>
@@ -142,28 +145,25 @@ export function RedAlertBanner() {
             </div>
 
             <div className="red-alert-actions">
-              {canAct ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn-alert-approve"
-                    disabled={isBusy}
-                    onClick={() => handleApproveAlert(alert)}
-                  >
-                    {isBusy ? t('alerts.processing') : t('alerts.approve')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-alert-dismiss"
-                    disabled={isBusy}
-                    onClick={() => handleDismissAlert(alert)}
-                  >
-                    {t('alerts.dismiss')}
-                  </button>
-                </>
-              ) : (
-                <span className="no-permission-hint">{t('alerts.noPermission')}</span>
-              )}
+              {!canAct && <span className="no-permission-hint">{t('alerts.noPermission')}</span>}
+              <button
+                type="button"
+                className="btn-alert-approve"
+                disabled={!canAct || isBusy}
+                title={!canAct ? t('alerts.noPermissionTooltip') : t('alerts.approve')}
+                onClick={() => canAct && handleApproveAlert(alert)}
+              >
+                {isBusy ? t('alerts.processing') : t('alerts.approve')}
+              </button>
+              <button
+                type="button"
+                className="btn-alert-dismiss"
+                disabled={!canAct || isBusy}
+                title={!canAct ? t('alerts.noPermissionTooltip') : t('alerts.dismiss')}
+                onClick={() => canAct && handleDismissAlert(alert)}
+              >
+                {t('alerts.dismiss')}
+              </button>
             </div>
           </div>
         )

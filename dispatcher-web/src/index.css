@@ -504,7 +504,7 @@ select {
 /* ==================== STATS BAR ==================== */
 .stats-bar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   padding: 8px 16px;
   background: var(--bg-root);
@@ -529,6 +529,17 @@ select {
 
 .stat-card-priority .stat-value {
   color: #fda4af;
+}
+
+.stat-card-suspicious {
+  border-color: rgba(249, 115, 22, 0.72);
+  background: rgba(234, 88, 12, 0.14);
+}
+
+.stat-card-suspicious .stat-value {
+  color: #fdba74;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
@@ -740,12 +751,13 @@ select {
 
 .btn-alert-approve:disabled,
 .btn-alert-dismiss:disabled {
-  opacity: 0.6;
-  cursor: wait;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .no-permission-hint {
-  font-size: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
   color: #fecaca;
 }
 
@@ -816,6 +828,90 @@ select {
   border: 1px solid rgba(251, 191, 36, 0.4);
   color: #fef3c7;
   white-space: nowrap;
+}
+
+/* ==================== SOS FLOOD BANNER ==================== */
+.sos-flood-banner {
+  margin: 6px 16px 0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, rgba(185, 28, 28, 0.94), rgba(194, 65, 12, 0.9));
+  border: 1px solid rgba(251, 146, 60, 0.85);
+  box-shadow: 0 4px 18px rgba(234, 88, 12, 0.28);
+}
+
+.sos-flood-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sos-flood-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #ea580c;
+  border: 1px solid rgba(254, 215, 170, 0.65);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.sos-flood-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff7ed;
+}
+
+.sos-flood-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sos-flood-chip {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(254, 215, 170, 0.45);
+  color: #fed7aa;
+  white-space: nowrap;
+}
+
+.btn-flood-clear {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #fff;
+  color: #9a3412;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-flood-clear:hover:not(:disabled) {
+  background: #ffedd5;
+}
+
+.btn-flood-clear:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* ==================== 3-COLUMN WORKSPACE ==================== */
@@ -993,6 +1089,22 @@ select {
   border-left: 4px solid #ef4444;
   border-color: rgba(239, 68, 68, 0.45);
   background: linear-gradient(90deg, rgba(153, 27, 27, 0.26), var(--bg-card) 65%);
+}
+
+.sos-card-suspicious {
+  border-color: rgba(249, 115, 22, 0.55);
+  background: linear-gradient(90deg, rgba(194, 65, 12, 0.2), var(--bg-card) 70%);
+}
+
+.sos-cap-notice {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fed7aa;
+  background: rgba(194, 65, 12, 0.2);
+  border: 1px solid rgba(249, 115, 22, 0.45);
+  border-radius: 7px;
+  padding: 5px 9px;
+  text-align: center;
 }
 
 .priority-sos-badge {
@@ -1767,6 +1879,22 @@ select {
 .sim-btn-warning {
   background: #d97706;
   color: #fff;
+}
+
+.sim-flood-row {
+  display: flex;
+  align-items: center;
+}
+
+.sim-btn-flood {
+  width: 100%;
+  background: linear-gradient(135deg, #dc2626, #ea580c);
+  color: #fff;
+}
+
+.sim-btn-flood:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .sim-btn-ghost {

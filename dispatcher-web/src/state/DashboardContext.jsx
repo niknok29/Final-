@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   approveAlert,
   clearSession,
+  clearSuspiciousSos,
   dismissAlert,
   getDashboard,
   getHealth,
+  getMe,
   getStoredSession,
   login,
+  saveSession,
   setApiCallbacks,
   simCloseRoad,
+  simFlood,
   simOpenRoad,
   simReset,
   simSetProvider,
@@ -21,10 +25,20 @@ import { connectDispatcherWS } from '../api/ws.js'
 import { playAlertBeep } from '../utils/audio.js'
 import { DashboardContext } from './dashboardStore.js'
 
+const EMPTY_FLOOD = {
+  active: false,
+  suspiciousCount: 0,
+  filteredCount: 0,
+  accepted: 0,
+  duplicates: 0,
+  throttled: 0,
+}
+
 const EMPTY_DASHBOARD = {
   stats: {
     activeSos: 0,
     prioritySos: 0,
+    suspiciousSos: 0,
     pendingAlerts: 0,
     shelters: 0,
     fullShelters: 0,
@@ -39,14 +53,32 @@ const EMPTY_DASHBOARD = {
   roads: [],
 }
 
+function shouldNotifyGenericActionError(err) {
+  return (
+    err?.status !== 401 &&
+    err?.status !== 403 &&
+    err?.status !== 429 &&
+    err?.status !== 413 &&
+    err?.code !== 'PAYLOAD_TOO_LARGE'
+  )
+}
+
+function isSuspiciousSosItem(item) {
+  return Boolean(
+    item && (item.suspicious === true || item.isSuspicious === true || item.status === 'suspicious')
+  )
+}
+
 function isPrioritySosItem(item) {
   return item?.profile === 'special_needs' || item?.priorityRank === 1
 }
 
-function computeStatsFromArrays({ sos, alerts, shelters, crews }) {
-  const activeSosItems = sos.filter((s) => s.status !== 'resolved')
+function computeStatsFromArrays({ sos, alerts, shelters, crews, flood }) {
+  const activeSosItems = sos.filter((s) => s.status !== 'resolved' && !isSuspiciousSosItem(s))
   const activeSos = activeSosItems.length
   const prioritySos = activeSosItems.filter(isPrioritySosItem).length
+  const suspiciousFromList = sos.filter(isSuspiciousSosItem).length
+  const suspiciousSos = Math.max(flood?.suspiciousCount || 0, suspiciousFromList)
   const pendingAlerts = alerts.filter((a) => a.status === 'pending').length
   const fullShelters = shelters.filter((s) => {
     const pct = s.occupancyPercent ?? s.percent ?? 0
@@ -57,11 +89,105 @@ function computeStatsFromArrays({ sos, alerts, shelters, crews }) {
   return {
     activeSos,
     prioritySos,
+    suspiciousSos,
     pendingAlerts,
     shelters: shelters.length,
     fullShelters,
     totalCrews: crews.length,
     availableCrews,
+  }
+}
+
+function normalizeFloodTelemetry(currentFlood = EMPTY_FLOOD, payload, sosList = []) {
+  const suspiciousFromList = sosList.filter(isSuspiciousSosItem).length
+  if (!payload || typeof payload !== 'object') {
+    const suspiciousCount = Math.max(currentFlood.suspiciousCount || 0, suspiciousFromList)
+    const filteredCount = Math.max(currentFlood.filteredCount || 0, suspiciousCount)
+    return {
+      ...currentFlood,
+      suspiciousCount,
+      filteredCount,
+      active: Boolean(currentFlood.active || suspiciousCount > 0 || filteredCount > 0),
+    }
+  }
+
+  const hasExplicitFloodFields =
+    payload.flood !== undefined ||
+    payload.floodActive !== undefined ||
+    payload.suspiciousCount !== undefined ||
+    payload.suspiciousSos !== undefined ||
+    payload.filteredCount !== undefined ||
+    payload.filteredSos !== undefined ||
+    payload.stats?.suspiciousSos !== undefined
+
+  if (!hasExplicitFloodFields) {
+    const suspiciousCount = Math.max(currentFlood.suspiciousCount || 0, suspiciousFromList)
+    const filteredCount = Math.max(currentFlood.filteredCount || 0, suspiciousCount)
+    return {
+      ...currentFlood,
+      suspiciousCount,
+      filteredCount,
+      active: Boolean(currentFlood.active || suspiciousCount > 0 || filteredCount > 0),
+    }
+  }
+
+  const src = payload.flood && typeof payload.flood === 'object' ? payload.flood : payload
+  const rawSuspicious =
+    src.suspiciousCount ??
+    src.suspiciousSos ??
+    src.suspicious ??
+    payload.stats?.suspiciousSos ??
+    payload.suspiciousSos
+  const rawFiltered =
+    src.filteredCount ?? src.filteredSos ?? payload.filteredCount ?? payload.filteredSos
+  const rawActive =
+    typeof src.active === 'boolean'
+      ? src.active
+      : typeof payload.floodActive === 'boolean'
+        ? payload.floodActive
+        : null
+
+  if (
+    rawActive === false &&
+    Number(rawSuspicious ?? 0) === 0 &&
+    Number(rawFiltered ?? 0) === 0
+  ) {
+    return {
+      ...EMPTY_FLOOD,
+      active: suspiciousFromList > 0,
+      suspiciousCount: suspiciousFromList,
+      filteredCount: suspiciousFromList,
+    }
+  }
+
+  const nextAccepted = src.accepted != null ? Number(src.accepted) || 0 : currentFlood.accepted || 0
+  const nextDuplicates =
+    src.duplicates != null ? Number(src.duplicates) || 0 : currentFlood.duplicates || 0
+  const nextThrottled =
+    src.throttled != null ? Number(src.throttled) || 0 : currentFlood.throttled || 0
+  const nextSuspicious =
+    rawSuspicious != null
+      ? Math.max(Number(rawSuspicious) || 0, suspiciousFromList)
+      : Math.max(currentFlood.suspiciousCount || 0, suspiciousFromList)
+  const nextFiltered =
+    rawFiltered != null
+      ? Math.max(Number(rawFiltered) || 0, nextSuspicious)
+      : Math.max(
+          currentFlood.filteredCount || 0,
+          nextSuspicious + nextDuplicates + nextThrottled
+        )
+  const nextActive =
+    rawActive !== null
+      ? rawActive || nextSuspicious > 0 || nextFiltered > 0
+      : Boolean(currentFlood.active || nextSuspicious > 0 || nextFiltered > 0)
+
+  return {
+    active: nextActive,
+    suspiciousCount: nextSuspicious,
+    filteredCount: nextFiltered,
+    accepted: nextAccepted,
+    duplicates: nextDuplicates,
+    throttled: nextThrottled,
   }
 }
 
@@ -192,6 +318,7 @@ function createInitialState() {
   return {
     user: stored || null,
     dashboard: EMPTY_DASHBOARD,
+    flood: EMPTY_FLOOD,
     loadingDashboard: Boolean(stored),
     connectionStatus: 'live',
     healthStatus: 'ok',
@@ -213,6 +340,137 @@ function createInitialState() {
   }
 }
 
+function applyWsEventsToState(state, events) {
+  if (!Array.isArray(events) || events.length === 0) return state
+
+  let nextState = state
+  let d = state.dashboard
+  let flood = state.flood
+  let sosMap = null
+  let sosDirty = false
+  let shelters = d.shelters
+  let roads = d.roads
+  let crews = d.crews
+  let alerts = d.alerts
+  let zones = d.zones
+  let dashboardDirty = false
+  let floodDirty = false
+
+  for (const envelope of events) {
+    const type = envelope?.type
+    const data = envelope?.data
+    if (!type || !data) continue
+
+    if (type === 'provider.updated') {
+      nextState = applyProviderTelemetry(nextState, data)
+      continue
+    }
+
+    if (type === 'reroute') {
+      if (
+        data.offline !== undefined ||
+        data.fallbackMode !== undefined ||
+        data.notice !== undefined
+      ) {
+        nextState = applyProviderTelemetry(nextState, data)
+      }
+      continue
+    }
+
+    if (type === 'flood.updated' || type === 'sos.flood') {
+      const currentSos = sosMap ? Array.from(sosMap.values()) : d.sos
+      flood = normalizeFloodTelemetry(flood, data, currentSos)
+      floodDirty = true
+      continue
+    }
+
+    if (type === 'sos.suspicious_cleared') {
+      if (!sosMap) {
+        sosMap = new Map(d.sos.map((item) => [item.id, item]))
+      }
+      for (const [id, item] of sosMap.entries()) {
+        if (isSuspiciousSosItem(item) || item.floodGenerated === true) {
+          sosMap.delete(id)
+        }
+      }
+      sosDirty = true
+      dashboardDirty = true
+      flood = { ...EMPTY_FLOOD }
+      floodDirty = true
+      continue
+    }
+
+    if (type === 'sos.created' || type === 'sos.updated') {
+      if (data.id) {
+        if (!sosMap) {
+          sosMap = new Map(d.sos.map((item) => [item.id, item]))
+        }
+        const existing = sosMap.get(data.id)
+        sosMap.set(data.id, existing ? { ...existing, ...data } : data)
+        sosDirty = true
+        dashboardDirty = true
+      }
+      if (data.flood || data.suspiciousCount != null) {
+        const currentSos = sosMap ? Array.from(sosMap.values()) : d.sos
+        flood = normalizeFloodTelemetry(flood, data, currentSos)
+        floodDirty = true
+      }
+    } else if (type === 'shelter.updated') {
+      shelters = upsertById(shelters, data)
+      dashboardDirty = true
+    } else if (type === 'road.updated') {
+      roads = upsertById(roads, data)
+      dashboardDirty = true
+    } else if (type === 'crew.updated') {
+      crews = upsertById(crews, data)
+      dashboardDirty = true
+    } else if (type === 'alert.created' || type === 'alert.updated') {
+      alerts = upsertById(alerts, data, type === 'alert.created')
+      dashboardDirty = true
+    } else if (type === 'zone.updated') {
+      zones = upsertById(zones, data)
+      dashboardDirty = true
+    }
+  }
+
+  const finalSos = sosDirty
+    ? sortSosByPriorityAndTime(Array.from(sosMap.values())).slice(0, 600)
+    : d.sos
+
+  if (sosDirty) {
+    const suspiciousCountFromSos = finalSos.filter(isSuspiciousSosItem).length
+    if (suspiciousCountFromSos > (flood?.suspiciousCount || 0)) {
+      flood = {
+        ...flood,
+        active: true,
+        suspiciousCount: suspiciousCountFromSos,
+        filteredCount: Math.max(flood?.filteredCount || 0, suspiciousCountFromSos),
+      }
+      floodDirty = true
+    }
+  }
+
+  if (!dashboardDirty && !floodDirty) {
+    return nextState
+  }
+
+  const nextDashboard = {
+    zones,
+    sos: finalSos,
+    shelters,
+    crews,
+    alerts,
+    roads,
+  }
+  nextDashboard.stats = computeStatsFromArrays({ ...nextDashboard, flood })
+
+  return {
+    ...nextState,
+    flood,
+    dashboard: nextDashboard,
+  }
+}
+
 function reducer(state, action) {
   switch (action.type) {
     case 'SET_USER':
@@ -222,11 +480,22 @@ function reducer(state, action) {
         loadingDashboard: Boolean(action.payload),
       }
 
+    case 'UPDATE_USER_PROFILE':
+      if (!state.user) return state
+      return {
+        ...state,
+        user: {
+          ...state.user,
+          ...action.payload,
+        },
+      }
+
     case 'LOGOUT':
       return {
         ...state,
         user: null,
         dashboard: EMPTY_DASHBOARD,
+        flood: EMPTY_FLOOD,
         loadingDashboard: false,
         simDrawerOpen: false,
         recentSosIds: [],
@@ -238,20 +507,27 @@ function reducer(state, action) {
       const zones = Array.isArray(payload.zones) ? payload.zones : state.dashboard.zones
       const sos = sortSosByPriorityAndTime(
         Array.isArray(payload.sos) ? payload.sos : state.dashboard.sos
-      )
+      ).slice(0, 600)
       const shelters = Array.isArray(payload.shelters) ? payload.shelters : state.dashboard.shelters
       const crews = Array.isArray(payload.crews) ? payload.crews : state.dashboard.crews
       const alerts = Array.isArray(payload.alerts) ? payload.alerts : state.dashboard.alerts
       const roads = Array.isArray(payload.roads) ? payload.roads : state.dashboard.roads
-      const derived = computeStatsFromArrays({ sos, alerts, shelters, crews })
+      const flood = normalizeFloodTelemetry(state.flood, payload, sos)
+      const derived = computeStatsFromArrays({ sos, alerts, shelters, crews, flood })
       return {
         ...state,
         loadingDashboard: false,
+        flood,
         dashboard: {
           stats: {
             ...derived,
             ...(payload.stats || {}),
             prioritySos: payload.stats?.prioritySos ?? derived.prioritySos,
+            suspiciousSos: Math.max(
+              payload.stats?.suspiciousSos ?? 0,
+              derived.suspiciousSos,
+              flood.suspiciousCount
+            ),
           },
           zones,
           sos,
@@ -263,46 +539,71 @@ function reducer(state, action) {
       }
     }
 
-    case 'APPLY_WS_EVENT': {
-      const { type, data } = action.payload || {}
-      if (!type || !data) return state
-      if (type === 'provider.updated') {
-        return applyProviderTelemetry(state, data)
-      }
-      if (type === 'reroute') {
-        if (
-          data.offline !== undefined ||
-          data.fallbackMode !== undefined ||
-          data.notice !== undefined
-        ) {
-          return applyProviderTelemetry(state, data)
-        }
-        return state
-      }
-      const d = state.dashboard
-      let next = d
+    case 'APPLY_WS_EVENT':
+      return applyWsEventsToState(state, [action.payload])
 
-      if (type === 'sos.created' || type === 'sos.updated') {
-        const sos = sortSosByPriorityAndTime(upsertById(d.sos, data, type === 'sos.created'))
-        next = { ...d, sos }
-      } else if (type === 'shelter.updated') {
-        next = { ...d, shelters: upsertById(d.shelters, data) }
-      } else if (type === 'road.updated') {
-        next = { ...d, roads: upsertById(d.roads, data) }
-      } else if (type === 'crew.updated') {
-        next = { ...d, crews: upsertById(d.crews, data) }
-      } else if (type === 'alert.created' || type === 'alert.updated') {
-        next = { ...d, alerts: upsertById(d.alerts, data, type === 'alert.created') }
-      } else if (type === 'zone.updated') {
-        next = { ...d, zones: upsertById(d.zones, data) }
+    case 'APPLY_WS_BATCH':
+      return applyWsEventsToState(state, action.payload)
+
+    case 'APPLY_FLOOD_RESULT': {
+      const result = action.payload || {}
+      let nextFlood
+      if (result.flood && typeof result.flood === 'object') {
+        nextFlood = normalizeFloodTelemetry(state.flood, result, state.dashboard.sos)
       } else {
-        return state
+        const addedAccepted = Number(result.accepted || 0) || 0
+        const addedDuplicates = Number(result.duplicates || 0) || 0
+        const addedThrottled = Number(result.throttled || 0) || 0
+        const addedSuspicious = Number(result.suspicious || 0) || 0
+        const nextSuspicious =
+          result.suspiciousCount != null
+            ? Number(result.suspiciousCount) || 0
+            : (state.flood.suspiciousCount || 0) + addedSuspicious
+        const addedFiltered = addedDuplicates + addedThrottled + addedSuspicious
+        const nextFiltered =
+          result.filteredCount != null
+            ? Math.max(Number(result.filteredCount) || 0, nextSuspicious)
+            : (state.flood.filteredCount || 0) + addedFiltered
+        nextFlood = {
+          active: true,
+          suspiciousCount: nextSuspicious,
+          filteredCount: nextFiltered,
+          accepted: (state.flood.accepted || 0) + addedAccepted,
+          duplicates: (state.flood.duplicates || 0) + addedDuplicates,
+          throttled: (state.flood.throttled || 0) + addedThrottled,
+        }
       }
-
-      next.stats = computeStatsFromArrays(next)
+      const nextStats = {
+        ...state.dashboard.stats,
+        suspiciousSos: Math.max(
+          nextFlood.suspiciousCount,
+          state.dashboard.stats.suspiciousSos || 0
+        ),
+      }
       return {
         ...state,
-        dashboard: next,
+        flood: nextFlood,
+        dashboard: {
+          ...state.dashboard,
+          stats: nextStats,
+        },
+      }
+    }
+
+    case 'CLEAR_SUSPICIOUS_SOS': {
+      const nextSos = state.dashboard.sos.filter(
+        (item) => !isSuspiciousSosItem(item) && item.floodGenerated !== true
+      )
+      const nextFlood = { ...EMPTY_FLOOD }
+      const nextDashboard = {
+        ...state.dashboard,
+        sos: nextSos,
+      }
+      nextDashboard.stats = computeStatsFromArrays({ ...nextDashboard, flood: nextFlood })
+      return {
+        ...state,
+        flood: nextFlood,
+        dashboard: nextDashboard,
       }
     }
 
@@ -319,15 +620,42 @@ function reducer(state, action) {
       const resolvedShelter = result?.newShelter || result?.shelter || null
       const shelters = resolvedShelter ? upsertById(d.shelters, resolvedShelter) : d.shelters
       const next = { ...d, alerts, crews, shelters }
-      next.stats = computeStatsFromArrays(next)
+      next.stats = computeStatsFromArrays({ ...next, flood: state.flood })
       return { ...state, dashboard: next }
     }
 
     case 'SET_CONNECTION_STATUS':
       return { ...state, connectionStatus: action.payload }
 
-    case 'SET_HEALTH_STATUS':
-      return applyProviderTelemetry(state, action.payload)
+    case 'SET_HEALTH_STATUS': {
+      const withProvider = applyProviderTelemetry(state, action.payload)
+      if (
+        action.payload &&
+        typeof action.payload === 'object' &&
+        (action.payload.flood !== undefined ||
+          action.payload.floodActive !== undefined ||
+          action.payload.suspiciousCount !== undefined ||
+          action.payload.filteredCount !== undefined)
+      ) {
+        const nextFlood = normalizeFloodTelemetry(
+          withProvider.flood,
+          action.payload,
+          withProvider.dashboard.sos
+        )
+        return {
+          ...withProvider,
+          flood: nextFlood,
+          dashboard: {
+            ...withProvider.dashboard,
+            stats: {
+              ...withProvider.dashboard.stats,
+              suspiciousSos: nextFlood.suspiciousCount,
+            },
+          },
+        }
+      }
+      return withProvider
+    }
 
     case 'SET_SOS_FILTER':
       return { ...state, sosFilter: action.payload }
@@ -349,6 +677,22 @@ function reducer(state, action) {
         ...state,
         recentSosIds: state.recentSosIds.filter((id) => id !== action.payload),
       }
+
+    case 'ADD_RECENT_SOS_BATCH': {
+      const incoming = Array.isArray(action.payload) ? action.payload : []
+      if (incoming.length === 0) return state
+      const merged = Array.from(new Set([...incoming, ...state.recentSosIds])).slice(0, 20)
+      return { ...state, recentSosIds: merged }
+    }
+
+    case 'REMOVE_RECENT_SOS_BATCH': {
+      const removeSet = new Set(Array.isArray(action.payload) ? action.payload : [])
+      if (removeSet.size === 0) return state
+      return {
+        ...state,
+        recentSosIds: state.recentSosIds.filter((id) => !removeSet.has(id)),
+      }
+    }
 
     case 'SET_MAP_FOCUS':
       return {
@@ -397,11 +741,18 @@ export function DashboardProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, null, createInitialState)
   const { t, i18n } = useTranslation()
   const audioMutedRef = useRef(state.audioMuted)
+  const floodSuspiciousRef = useRef(state.flood?.suspiciousCount ?? 0)
   const toastSeqRef = useRef(1)
+  const wsBatchQueueRef = useRef([])
+  const wsBatchTimerRef = useRef(null)
 
   useEffect(() => {
     audioMutedRef.current = state.audioMuted
   }, [state.audioMuted])
+
+  useEffect(() => {
+    floodSuspiciousRef.current = state.flood?.suspiciousCount ?? 0
+  }, [state.flood?.suspiciousCount])
 
   const addToast = useCallback((message, variant = 'info') => {
     const id = `toast-${Date.now()}-${toastSeqRef.current++}`
@@ -424,6 +775,9 @@ export function DashboardProvider({ children }) {
     setApiCallbacks({
       onUnauthorized: () => {
         dispatch({ type: 'LOGOUT' })
+      },
+      onForbidden: () => {
+        addToast(t('toast.forbidden'), 'error')
       },
       onRateLimit: (info) => {
         const retryAfter = typeof info === 'object' ? info?.retryAfter : info
@@ -460,7 +814,7 @@ export function DashboardProvider({ children }) {
         dispatch({ type: 'SET_HEALTH_STATUS', payload: health })
       }
     } catch {
-      // Handled by api callbacks on 401/429 or timeout
+      // Handled by api callbacks on 401/403/429 or timeout
     }
   }, [])
 
@@ -469,6 +823,21 @@ export function DashboardProvider({ children }) {
   useEffect(() => {
     const token = state.user?.token
     if (!token) return undefined
+
+    let active = true
+
+    getMe()
+      .then((me) => {
+        if (!active || !me) return
+        dispatch({ type: 'UPDATE_USER_PROFILE', payload: me })
+        const stored = getStoredSession()
+        if (stored?.token) {
+          saveSession({ ...stored, ...me })
+        }
+      })
+      .catch(() => {
+        // Handled by apiFetch callbacks on 401
+      })
 
     loadSnapshotAndHealth()
 
@@ -493,6 +862,35 @@ export function DashboardProvider({ children }) {
       }
     }, 20000)
 
+    const flushWsBatch = () => {
+      wsBatchTimerRef.current = null
+      const batch = wsBatchQueueRef.current
+      if (!batch.length) return
+      wsBatchQueueRef.current = []
+
+      dispatch({ type: 'APPLY_WS_BATCH', payload: batch })
+
+      const createdIds = []
+      let hasAlertCreated = false
+      for (const envelope of batch) {
+        if (envelope?.type === 'sos.created' && envelope.data?.id && createdIds.length < 10) {
+          createdIds.push(envelope.data.id)
+        } else if (envelope?.type === 'alert.created') {
+          hasAlertCreated = true
+        }
+      }
+
+      if (createdIds.length > 0) {
+        dispatch({ type: 'ADD_RECENT_SOS_BATCH', payload: createdIds })
+        setTimeout(() => {
+          dispatch({ type: 'REMOVE_RECENT_SOS_BATCH', payload: createdIds })
+        }, 3500)
+      }
+      if (hasAlertCreated && !audioMutedRef.current) {
+        playAlertBeep()
+      }
+    }
+
     const disconnectWs = connectDispatcherWS({
       token,
       lang: wsLang,
@@ -509,21 +907,20 @@ export function DashboardProvider({ children }) {
         addToast(t('toast.wsAuthExpired'), 'error')
       },
       onEvent: (envelope) => {
-        dispatch({ type: 'APPLY_WS_EVENT', payload: envelope })
-        if (envelope.type === 'sos.created' && envelope.data?.id) {
-          const id = envelope.data.id
-          dispatch({ type: 'ADD_RECENT_SOS', payload: id })
-          setTimeout(() => {
-            dispatch({ type: 'REMOVE_RECENT_SOS', payload: id })
-          }, 3500)
-        }
-        if (envelope.type === 'alert.created' && !audioMutedRef.current) {
-          playAlertBeep()
+        wsBatchQueueRef.current.push(envelope)
+        if (!wsBatchTimerRef.current) {
+          wsBatchTimerRef.current = setTimeout(flushWsBatch, 200)
         }
       },
     })
 
     return () => {
+      active = false
+      if (wsBatchTimerRef.current) {
+        clearTimeout(wsBatchTimerRef.current)
+        wsBatchTimerRef.current = null
+      }
+      wsBatchQueueRef.current = []
       clearInterval(healthInterval)
       disconnectWs()
     }
@@ -582,13 +979,7 @@ export function DashboardProvider({ children }) {
           await loadSnapshotAndHealth()
         } else if (err?.code === 'NO_CREW_AVAILABLE') {
           addToast(t('toast.noCrewAvailable'), 'error')
-        } else if (
-          err?.status !== 429 &&
-          err?.status !== 413 &&
-          err?.code !== 'PAYLOAD_TOO_LARGE' &&
-          err?.status !== 401 &&
-          err?.status !== 403
-        ) {
+        } else if (shouldNotifyGenericActionError(err)) {
           addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
@@ -613,13 +1004,7 @@ export function DashboardProvider({ children }) {
         if (err?.code === 'ALERT_NOT_PENDING') {
           addToast(t('toast.alertNotPending'), 'warning')
           await loadSnapshotAndHealth()
-        } else if (
-          err?.status !== 429 &&
-          err?.status !== 413 &&
-          err?.code !== 'PAYLOAD_TOO_LARGE' &&
-          err?.status !== 401 &&
-          err?.status !== 403
-        ) {
+        } else if (shouldNotifyGenericActionError(err)) {
           addToast(err?.message || t('toast.actionError'), 'error')
         }
       } finally {
@@ -641,7 +1026,7 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.roadClosed', { road: road.name }), 'warning')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        if (shouldNotifyGenericActionError(err)) {
           addToast(t('toast.actionError'), 'error')
         }
       }
@@ -661,7 +1046,7 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.roadOpened', { road: road.name }), 'success')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        if (shouldNotifyGenericActionError(err)) {
           addToast(t('toast.actionError'), 'error')
         }
       }
@@ -681,7 +1066,7 @@ export function DashboardProvider({ children }) {
         }
         addToast(t('toast.shelterUpdated', { shelter: shelter.name, percent }), 'info')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        if (shouldNotifyGenericActionError(err)) {
           addToast(t('toast.actionError'), 'error')
         }
       }
@@ -699,13 +1084,53 @@ export function DashboardProvider({ children }) {
         })
         addToast(t('toast.sosBurstSent'), 'warning')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        if (shouldNotifyGenericActionError(err)) {
           addToast(t('toast.actionError'), 'error')
         }
       }
     },
     [addToast, t]
   )
+
+  const handleSimFlood = useCallback(
+    async (count = 600) => {
+      try {
+        const result = await simFlood({ count })
+        dispatch({ type: 'APPLY_FLOOD_RESULT', payload: result })
+        addToast(
+          t('toast.sosFloodResult', {
+            accepted: result?.accepted ?? 0,
+            duplicates: result?.duplicates ?? 0,
+            throttled: result?.throttled ?? 0,
+            suspicious: result?.suspicious ?? result?.suspiciousCount ?? 0,
+          }),
+          'warning'
+        )
+        return result
+      } catch (err) {
+        if (shouldNotifyGenericActionError(err)) {
+          addToast(t('toast.actionError'), 'error')
+        }
+        return null
+      }
+    },
+    [addToast, t]
+  )
+
+  const handleClearSuspiciousSos = useCallback(async () => {
+    try {
+      const result = await clearSuspiciousSos()
+      const clearedCount = result?.cleared ?? floodSuspiciousRef.current ?? 0
+      dispatch({ type: 'CLEAR_SUSPICIOUS_SOS' })
+      addToast(t('toast.suspiciousCleared', { count: clearedCount }), 'success')
+      return result
+    } catch (err) {
+      if (shouldNotifyGenericActionError(err)) {
+        addToast(t('toast.actionError'), 'error')
+      }
+      return null
+    }
+  }, [addToast, t])
 
   const handleSimSetProvider = useCallback(
     async (nextState) => {
@@ -745,7 +1170,7 @@ export function DashboardProvider({ children }) {
         })
         addToast(t('toast.providerUpdated', { state: nextState.toUpperCase() }), 'info')
       } catch (err) {
-        if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+        if (shouldNotifyGenericActionError(err)) {
           addToast(t('toast.actionError'), 'error')
         }
       }
@@ -756,6 +1181,7 @@ export function DashboardProvider({ children }) {
   const handleSimReset = useCallback(async () => {
     try {
       const result = await simReset()
+      dispatch({ type: 'CLEAR_SUSPICIOUS_SOS' })
       dispatch({
         type: 'APPLY_WS_EVENT',
         payload: {
@@ -779,33 +1205,80 @@ export function DashboardProvider({ children }) {
       }
       addToast(t('toast.simReset'), 'success')
     } catch (err) {
-      if (err?.status !== 429 && err?.status !== 413 && err?.code !== 'PAYLOAD_TOO_LARGE') {
+      if (shouldNotifyGenericActionError(err)) {
         addToast(t('toast.actionError'), 'error')
       }
     }
   }, [loadSnapshotAndHealth, addToast, t])
 
-  const value = {
-    ...state,
-    handleLogin,
-    handleLogout,
-    handleApproveAlert,
-    handleDismissAlert,
-    handleSimCloseRoad,
-    handleSimOpenRoad,
-    handleSimShelterOccupancy,
-    handleSimSosBurst,
-    handleSimSetProvider,
-    handleSimReset,
-    removeToast,
-    setSosFilter: (filter) => dispatch({ type: 'SET_SOS_FILTER', payload: filter }),
-    togglePriorityOnlyFilter: (val) =>
-      dispatch({ type: 'TOGGLE_PRIORITY_ONLY_FILTER', payload: val }),
-    focusMap: (focus) => dispatch({ type: 'SET_MAP_FOCUS', payload: focus }),
-    setSimTargetCoords: (coords) => dispatch({ type: 'SET_SIM_TARGET_COORDS', payload: coords }),
-    toggleAudioMuted: () => dispatch({ type: 'TOGGLE_AUDIO_MUTED' }),
-    toggleSimDrawer: (open) => dispatch({ type: 'TOGGLE_SIM_DRAWER', payload: open }),
-  }
+  const setSosFilter = useCallback(
+    (filter) => dispatch({ type: 'SET_SOS_FILTER', payload: filter }),
+    []
+  )
+  const togglePriorityOnlyFilter = useCallback(
+    (val) => dispatch({ type: 'TOGGLE_PRIORITY_ONLY_FILTER', payload: val }),
+    []
+  )
+  const focusMap = useCallback(
+    (focus) => dispatch({ type: 'SET_MAP_FOCUS', payload: focus }),
+    []
+  )
+  const setSimTargetCoords = useCallback(
+    (coords) => dispatch({ type: 'SET_SIM_TARGET_COORDS', payload: coords }),
+    []
+  )
+  const toggleAudioMuted = useCallback(() => dispatch({ type: 'TOGGLE_AUDIO_MUTED' }), [])
+  const toggleSimDrawer = useCallback(
+    (open) => dispatch({ type: 'TOGGLE_SIM_DRAWER', payload: open }),
+    []
+  )
+
+  const value = useMemo(
+    () => ({
+      ...state,
+      handleLogin,
+      handleLogout,
+      handleApproveAlert,
+      handleDismissAlert,
+      handleSimCloseRoad,
+      handleSimOpenRoad,
+      handleSimShelterOccupancy,
+      handleSimSosBurst,
+      handleSimFlood,
+      handleClearSuspiciousSos,
+      handleSimSetProvider,
+      handleSimReset,
+      removeToast,
+      setSosFilter,
+      togglePriorityOnlyFilter,
+      focusMap,
+      setSimTargetCoords,
+      toggleAudioMuted,
+      toggleSimDrawer,
+    }),
+    [
+      state,
+      handleLogin,
+      handleLogout,
+      handleApproveAlert,
+      handleDismissAlert,
+      handleSimCloseRoad,
+      handleSimOpenRoad,
+      handleSimShelterOccupancy,
+      handleSimSosBurst,
+      handleSimFlood,
+      handleClearSuspiciousSos,
+      handleSimSetProvider,
+      handleSimReset,
+      removeToast,
+      setSosFilter,
+      togglePriorityOnlyFilter,
+      focusMap,
+      setSimTargetCoords,
+      toggleAudioMuted,
+      toggleSimDrawer,
+    ]
+  )
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>
 }

@@ -17,6 +17,7 @@
     "demoTitle": "Демо-аккаунты (нажмите для заполнения):",
     "demoDispatcher": "Диспетчер: dispatcher / dispatcher123",
     "demoAdmin": "Админ: admin / admin123",
+    "demoObserver": "Наблюдатель (только чтение): observer / observer123",
     "error401": "Неверное имя пользователя или пароль.",
     "errorLocked": "Слишком много неудачных попыток входа (429 LOGIN_LOCKED). Повторите через {{seconds}} сек.",
     "errorRateLimit": "Слишком много запросов (429). Подождите {{seconds}} сек. перед повтором.",
@@ -49,15 +50,25 @@
     "logout": "Выход",
     "roles": {
       "dispatcher": "Диспетчер",
-      "admin": "Админ"
+      "admin": "Админ",
+      "observer": "Наблюдатель",
+      "viewer": "Просмотр"
     }
   },
   "notices": {
     "OFFLINE_BACKUP_ROUTE_MODE": "Работает в автономном / резервном режиме маршрутизации"
   },
+  "flood": {
+    "tag": "SOS FLOOD",
+    "bannerMessage": "Отфильтровано {{count}} ложных/подозрительных запросов",
+    "suspiciousChip": "подозр.: {{count}}",
+    "clearBtn": "Очистить",
+    "clearingBtn": "Очистка..."
+  },
   "stats": {
     "activeSos": "Активные SOS",
     "prioritySos": "Приоритетный SOS",
+    "suspiciousSos": "Подозрительные SOS",
     "pendingAlerts": "Красные тревоги",
     "shelters": "Убежища (Заполн. / Всего)",
     "crews": "Бригады (Доступно / Всего)"
@@ -81,11 +92,13 @@
     "dismiss": "Отклонить",
     "processing": "Выполнение...",
     "noPermission": "Недостаточно прав для действия.",
+    "noPermissionTooltip": "Нет прав доступа (режим чтения)",
     "approvedBadge": "Подтверждено"
   },
   "sos": {
     "title": "Лента SOS в реальном времени",
     "count": "Сигналов: {{count}}",
+    "cappedNotice": "Показаны первые {{shown}} из {{total}} сигналов",
     "empty": "Нет активных SOS сигналов по выбранному фильтру.",
     "noNote": "Дополнительная заметка отсутствует.",
     "flyHint": "Нажмите для перехода на карте",
@@ -108,7 +121,8 @@
     "status": {
       "active": "Активен",
       "dispatched": "Направлен",
-      "resolved": "Решен"
+      "resolved": "Решен",
+      "suspicious": "Подозрительный"
     }
   },
   "time": {
@@ -198,6 +212,8 @@
     "notePlaceholder": "Заметка SOS (макс. 200 симв.)",
     "targetCoords": "Координаты: {{lat}}, {{lng}}",
     "sendBurst": "Отправить 4 SOS",
+    "floodBtn": "SOS Flood (600)",
+    "floodRunning": "Отправка (600)...",
     "providerSection": "Провайдер маршрутизации",
     "providerUp": "Up",
     "providerSlow": "Slow (>5s)",
@@ -221,6 +237,9 @@
     "roadOpened": "Дорога открыта: {{road}}",
     "shelterUpdated": "Заполненность {{shelter}} изменена на {{percent}}%.",
     "sosBurstSent": "Созданы 4 новых SOS сигнала в выбранной точке.",
+    "sosFloodResult": "SOS Flood (600): {{accepted}} принято, {{duplicates}} дубл., {{throttled}} лимит, {{suspicious}} подозр.",
+    "suspiciousCleared": "Подозрительные SOS-запросы очищены ({{count}}).",
+    "forbidden": "Нет прав доступа",
     "providerUpdated": "Состояние провайдера изменено: {{state}}",
     "simReset": "Симуляция сброшена к исходному состоянию.",
     "reconnected": "Соединение восстановлено, данные синхронизированы.",

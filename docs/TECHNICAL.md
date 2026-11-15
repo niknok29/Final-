@@ -89,11 +89,13 @@
 
 ## 3. Security, Contract Errors & Fallback Handling
 
-- **Role-Based Access Control (`src/auth/permissions.js`):**
-  - `can(role, action)` checks a declarative permission set matching `backend/app/auth.py` (both `dispatcher` and `admin` may view live telemetry, approve/dismiss alerts, and trigger `simulate` scenarios). Extending for additional roles (e.g., read-only observer) takes <5 lines.
-- **Token & WebSocket `1008` Handling:**
+- **Role-Based Access Control (`src/auth/permissions.js` & `GET /api/auth/me`):**
+  - `can(roleOrUser, action)`, `canDispatch(user)`, and `canSimulate(user)` evaluate explicit `permissions` synced from `/api/auth/me` alongside declarative role sets (`dispatcher`, `admin`, and read-only `observer` / `viewer`).
+  - Read-only roles see disabled dispatch controls (`Approve`, `Dismiss`, `Clear` flood) with explanatory tooltips and hidden simulation drawer controls.
+- **Token, 401 vs 403 & WebSocket `1008` Handling:**
   - JWTs and user metadata are stored exclusively in `sessionStorage` and in-memory state — never `localStorage`.
-  - HTTP `401`/`403` and WebSocket close code `1008` (invalid/expired token or missing permission) immediately clear `sessionStorage`, halt reconnect loops, and redirect to `LoginPage`.
+  - HTTP `401` and WebSocket close code `1008` immediately clear `sessionStorage`, halt reconnect loops, and redirect to `LoginPage`.
+  - HTTP `403` (`FORBIDDEN`) never logs out the active session; instead it fires `onForbidden` to display a localized `"Permission denied"` toast notification.
 - **Conflict, Rate Limit & Hardening Error Codes (Contract Section L):**
   - `ALERT_NOT_PENDING` (`409`): displays a warning toast and triggers snapshot resync.
   - `NO_CREW_AVAILABLE` (`409`): notifies dispatchers that no eligible crew (or accessible transport unit) is free.
@@ -139,3 +141,17 @@
 - **Authentic Baku Coordinates & Avenue Polylines (`src/api/mock.js`):**
   - Live backend responses (`VITE_USE_MOCK=false`) always take precedence; offline mock fixtures match real Baku landmarks (`Heydər Əliyev Mərkəzi / Parkı` `[40.3959, 49.8678]`, `Bakı Olimpiya Stadionu` `[40.4298, 49.9197]`, `Tofiq Bəhramov adına Respublika Stadionu` `[40.3975, 49.8524]`, `Neftçi Arena` `[40.4008, 49.9436]`, `Dənizkənarı Milli Park` `[40.3665, 49.8372]`, `Gənclik Mall / Park` `[40.4002, 49.8529]`).
   - Major arteries (`Neftçilər prospekti`, `Heydər Əliyev prospekti`, `Tbilisi prospekti`, `Ziya Bünyadov prospekti`, `Azadlıq prospekti`, `28 May küçəsi`) use multi-point street waypoint polylines with computed `lengthMeters`.
+
+---
+
+## 6. SOS Flood Defense, High-Load Batching & RBAC Enforcement (Drop 3 / Contract Section M)
+
+- **SOS FLOOD Banner & Clear Endpoint (`DashboardPage.jsx`, `StatsBar.jsx`):**
+  - `DashboardContext` tracks `flood` telemetry (`{ active, suspiciousCount, filteredCount, accepted, duplicates, throttled }`) across snapshot/health loads, WebSocket events (`flood.updated`, `sos.flood`, `sos.suspicious_cleared`), and flood simulation responses.
+  - When a flood is active (`flood.active` or `suspiciousCount > 0`), a high-contrast red/orange **SOS FLOOD** banner displays the localized filtered request count (`"{count} saxta/şübhəli sorğu filtrlənib"`) and a **Clear** (`Təmizlə`) button wired to `POST /api/sos/suspicious/clear` (guarded by `canDispatch(user)`).
+  - `StatsBar.jsx` adds a dedicated tabular-nums monospace **"Şübhəli SOS"** KPI card (`stats.suspiciousSos`) highlighted when `> 0`.
+- **SOS Flood (600) Simulation (`SimulationDrawer.jsx`, `client.js`, `mock.js`):**
+  - Exposes **"SOS Flood (600)"** invoking `POST /api/sim/flood` (`{ count: 600 }`) with seamless pre-merge fallback to `mockSimFlood()`, reporting `{ accepted, duplicates, throttled, suspicious }` in a localized warning toast.
+- **High-Load UI Responsiveness (`DashboardContext.jsx`, `SosFeedPanel.jsx`, `CrisisMap.jsx`, `RightStatusPanel.jsx`):**
+  - Incoming WebSocket frames are buffered in a queue and flushed every **200 ms** via a single batched `APPLY_WS_BATCH` reducer update (building `Map`-based SOS upserts and sorting once per batch) instead of per-event re-renders.
+  - `SosFeedPanel.jsx` and `CrisisMap.jsx` each cap live rendered SOS rows/markers at **200** items, extract memoized `SosCardRow`, wrap heavy panels in `React.memo`, and compute filtered/sorted lists inside `useMemo` so 600+ event bursts never freeze the browser.

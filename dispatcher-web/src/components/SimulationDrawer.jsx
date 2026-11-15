@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { can } from '../auth/permissions.js'
+import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 import { sanitizeSosNoteInput, sanitizeUserNote } from '../utils/sanitize.js'
 
@@ -20,6 +20,7 @@ export function SimulationDrawer() {
     handleSimOpenRoad,
     handleSimShelterOccupancy,
     handleSimSosBurst,
+    handleSimFlood,
     handleSimSetProvider,
     handleSimReset,
   } = useDashboard()
@@ -29,8 +30,9 @@ export function SimulationDrawer() {
   const [occupancyPercent, setOccupancyPercent] = useState(96)
   const [burstType, setBurstType] = useState('fire')
   const [burstNote, setBurstNote] = useState('')
+  const [floodBusy, setFloodBusy] = useState(false)
 
-  if (!can(user?.role, 'simulate') || !simDrawerOpen) {
+  if (!canSimulate(user) || !simDrawerOpen) {
     return null
   }
 
@@ -181,6 +183,24 @@ export function SimulationDrawer() {
               lng: simTargetCoords.lng.toFixed(4),
             })}
           </span>
+          <div className="sim-flood-row">
+            <button
+              type="button"
+              className="sim-btn sim-btn-flood"
+              disabled={floodBusy}
+              onClick={async () => {
+                if (floodBusy) return
+                setFloodBusy(true)
+                try {
+                  await handleSimFlood(600)
+                } finally {
+                  setFloodBusy(false)
+                }
+              }}
+            >
+              {floodBusy ? t('sim.floodRunning') : t('sim.floodBtn')}
+            </button>
+          </div>
         </div>
 
         <div className="sim-control-card">

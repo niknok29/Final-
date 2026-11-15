@@ -17,6 +17,7 @@
     "demoTitle": "Demo accounts (click to autofill):",
     "demoDispatcher": "Dispatcher: dispatcher / dispatcher123",
     "demoAdmin": "Admin: admin / admin123",
+    "demoObserver": "Observer (read-only RBAC): observer / observer123",
     "error401": "Invalid username or password.",
     "errorLocked": "Too many failed login attempts (429 LOGIN_LOCKED). Try again in {{seconds}}s.",
     "errorRateLimit": "Too many requests (429). Please wait {{seconds}}s before retrying.",
@@ -49,15 +50,25 @@
     "logout": "Logout",
     "roles": {
       "dispatcher": "Dispatcher",
-      "admin": "Admin"
+      "admin": "Admin",
+      "observer": "Observer",
+      "viewer": "Viewer"
     }
   },
   "notices": {
     "OFFLINE_BACKUP_ROUTE_MODE": "Offline / backup route mode is active"
   },
+  "flood": {
+    "tag": "SOS FLOOD",
+    "bannerMessage": "{{count}} fake/suspicious requests filtered",
+    "suspiciousChip": "suspicious: {{count}}",
+    "clearBtn": "Clear",
+    "clearingBtn": "Clearing..."
+  },
   "stats": {
     "activeSos": "Active SOS",
     "prioritySos": "Priority SOS",
+    "suspiciousSos": "Suspicious SOS",
     "pendingAlerts": "Pending Red Alerts",
     "shelters": "Shelters (Full / Total)",
     "crews": "Crews (Available / Total)"
@@ -81,11 +92,13 @@
     "dismiss": "Dismiss",
     "processing": "Processing...",
     "noPermission": "You do not have permission to act on alerts.",
+    "noPermissionTooltip": "Permission denied (read-only role)",
     "approvedBadge": "Approved"
   },
   "sos": {
     "title": "Live SOS Feed",
     "count": "{{count}} signals",
+    "cappedNotice": "Showing top {{shown}} of {{total}} signals for performance",
     "empty": "No active SOS signals match this filter.",
     "noNote": "No additional note.",
     "flyHint": "Click to focus on map",
@@ -108,7 +121,8 @@
     "status": {
       "active": "Active",
       "dispatched": "Dispatched",
-      "resolved": "Resolved"
+      "resolved": "Resolved",
+      "suspicious": "Suspicious"
     }
   },
   "time": {
@@ -198,6 +212,8 @@
     "notePlaceholder": "Optional SOS note (max 200 chars)",
     "targetCoords": "Target: {{lat}}, {{lng}}",
     "sendBurst": "Send 4 SOS Burst",
+    "floodBtn": "SOS Flood (600)",
+    "floodRunning": "Flooding (600)...",
     "providerSection": "Routing Provider",
     "providerUp": "Up",
     "providerSlow": "Slow (>5s)",
@@ -221,6 +237,9 @@
     "roadOpened": "Road reopened: {{road}}",
     "shelterUpdated": "{{shelter}} occupancy updated to {{percent}}%.",
     "sosBurstSent": "4 SOS signals generated at target location.",
+    "sosFloodResult": "SOS Flood (600): {{accepted}} accepted, {{duplicates}} duplicates, {{throttled}} throttled, {{suspicious}} suspicious",
+    "suspiciousCleared": "Suspicious SOS requests cleared ({{count}}).",
+    "forbidden": "Permission denied",
     "providerUpdated": "Routing provider set to {{state}}.",
     "simReset": "Simulation state reset to baseline.",
     "reconnected": "Live connection restored and dashboard resynced.",

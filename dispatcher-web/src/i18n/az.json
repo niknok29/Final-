@@ -17,6 +17,7 @@
     "demoTitle": "Demo hesablar (doldurmaq üçün klikləyin):",
     "demoDispatcher": "Dispetçer: dispatcher / dispatcher123",
     "demoAdmin": "Admin: admin / admin123",
+    "demoObserver": "Müşahidəçi (RBAC oxuma): observer / observer123",
     "error401": "İstifadəçi adı və ya şifrə yanlışdır.",
     "errorLocked": "Çox sayda uğursuz giriş cəhdi (429 LOGIN_LOCKED). {{seconds}} saniyə sonra yenidən cəhd edin.",
     "errorRateLimit": "Çox sayda sorğu (429). Yenidən cəhd etməzdən əvvəl {{seconds}} saniyə gözləyin.",
@@ -49,15 +50,25 @@
     "logout": "Çıxış",
     "roles": {
       "dispatcher": "Dispetçer",
-      "admin": "Admin"
+      "admin": "Admin",
+      "observer": "Müşahidəçi",
+      "viewer": "İzləyici"
     }
   },
   "notices": {
     "OFFLINE_BACKUP_ROUTE_MODE": "Oflayn / Ehtiyat marşrut rejimində işləyir"
   },
+  "flood": {
+    "tag": "SOS FLOOD",
+    "bannerMessage": "{{count}} saxta/şübhəli sorğu filtrlənib",
+    "suspiciousChip": "şübhəli: {{count}}",
+    "clearBtn": "Təmizlə",
+    "clearingBtn": "Təmizlənir..."
+  },
   "stats": {
     "activeSos": "Aktiv SOS",
     "prioritySos": "Prioritet SOS",
+    "suspiciousSos": "Şübhəli SOS",
     "pendingAlerts": "Gözləyən Qırmızı Xəbərdarlıq",
     "shelters": "Sığınacaqlar (Dolu / Cəmi)",
     "crews": "Briqadalar (Hazır / Cəmi)"
@@ -81,11 +92,13 @@
     "dismiss": "Ləğv et",
     "processing": "İcra olunur...",
     "noPermission": "Bu əməliyyat üçün icazəniz yoxdur.",
+    "noPermissionTooltip": "İcazə yoxdur (yalnız oxuma rejimi)",
     "approvedBadge": "Təsdiqləndi"
   },
   "sos": {
     "title": "Canlı SOS Axını",
     "count": "{{count}} siqnal",
+    "cappedNotice": "Performans üçün ilk {{shown}} / {{total}} siqnal göstərilir",
     "empty": "Seçilmiş filtr üzrə aktiv SOS siqnalı yoxdur.",
     "noNote": "Əlavə qeyd yoxdur.",
     "flyHint": "Xəritədə baxmaq üçün klikləyin",
@@ -108,7 +121,8 @@
     "status": {
       "active": "Aktiv",
       "dispatched": "Yönləndirilib",
-      "resolved": "Həll edilib"
+      "resolved": "Həll edilib",
+      "suspicious": "Şübhəli"
     }
   },
   "time": {
@@ -198,6 +212,8 @@
     "notePlaceholder": "SOS qeydi (maks. 200 simvol)",
     "targetCoords": "Hədəf koordinat: {{lat}}, {{lng}}",
     "sendBurst": "4 SOS Göndər",
+    "floodBtn": "SOS Flood (600)",
+    "floodRunning": "Göndərilir (600)...",
     "providerSection": "Marşrutlaşdırma Provayderi",
     "providerUp": "Up",
     "providerSlow": "Slow (>5s)",
@@ -221,6 +237,9 @@
     "roadOpened": "Yol açıldı: {{road}}",
     "shelterUpdated": "{{shelter}} doluluğu {{percent}}% olaraq yeniləndi.",
     "sosBurstSent": "Seçilmiş nöqtədə 4 yeni SOS siqnalı yaradıldı.",
+    "sosFloodResult": "SOS Flood (600): {{accepted}} qəbul, {{duplicates}} dublikat, {{throttled}} limit, {{suspicious}} şübhəli",
+    "suspiciousCleared": "Şübhəli SOS sorğuları təmizləndi ({{count}}).",
+    "forbidden": "İcazə yoxdur",
     "providerUpdated": "Marşrutlaşdırma provayderi dəyişdirildi: {{state}}",
     "simReset": "Simulyasiya ilkin vəziyyətə qaytarıldı.",
     "reconnected": "Canlı əlaqə bərpa edildi və məlumatlar yeniləndi.",

@@ -157,6 +157,13 @@ export function LoginPage() {
             >
               {t('login.demoAdmin')}
             </button>
+            <button
+              type="button"
+              className="demo-chip"
+              onClick={() => fillDemo('observer', 'observer123')}
+            >
+              {t('login.demoObserver')}
+            </button>
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -13,7 +13,7 @@ import {
   useMap,
   useMapEvents,
 } from 'react-leaflet'
-import { can } from '../auth/permissions.js'
+import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 import {
   calculatePathLengthMeters,
@@ -177,7 +177,9 @@ function MapClickHandler({ onSelectCoords }) {
   return null
 }
 
-export function CrisisMap() {
+const MAX_MAP_SOS = 200
+
+export const CrisisMap = memo(function CrisisMap() {
   const { t, i18n } = useTranslation()
   const {
     user,
@@ -191,7 +193,7 @@ export function CrisisMap() {
   } = useDashboard()
 
   const sosMarkerRefs = useRef({})
-  const showSimTarget = can(user?.role, 'simulate') && simDrawerOpen
+  const showSimTarget = canSimulate(user) && simDrawerOpen
   const lang = i18n.language
 
   const zoneNamesById = useMemo(() => {
@@ -202,25 +204,36 @@ export function CrisisMap() {
     return map
   }, [dashboard.zones])
 
-  const visibleSos = dashboard.sos.filter((item) => {
-    const matchesHazard = sosFilter === 'all' ? true : item.type === sosFilter
-    if (!matchesHazard) return false
-    if (priorityOnlyFilter) {
-      return item.profile === 'special_needs' || item.priorityRank === 1
-    }
-    return true
-  })
-
-  const overlayRoads = dashboard.roads.filter(
-    (r) => Array.isArray(r.path) && r.path.length >= 2
+  const visibleSos = useMemo(
+    () =>
+      dashboard.sos
+        .filter((item) => {
+          const matchesHazard = sosFilter === 'all' ? true : item.type === sosFilter
+          if (!matchesHazard) return false
+          if (priorityOnlyFilter) {
+            return item.profile === 'special_needs' || item.priorityRank === 1
+          }
+          return true
+        })
+        .slice(0, MAX_MAP_SOS),
+    [dashboard.sos, sosFilter, priorityOnlyFilter]
   )
 
-  const alertCircles = dashboard.alerts.filter(
-    (alert) =>
-      (alert.kind === 'SOS_CLUSTER' || alert.kind === 'PRIORITY_SOS') &&
-      (alert.status === 'pending' || mapFocus?.alertId === alert.id) &&
-      typeof alert.lat === 'number' &&
-      typeof alert.lng === 'number'
+  const overlayRoads = useMemo(
+    () => dashboard.roads.filter((r) => Array.isArray(r.path) && r.path.length >= 2),
+    [dashboard.roads]
+  )
+
+  const alertCircles = useMemo(
+    () =>
+      dashboard.alerts.filter(
+        (alert) =>
+          (alert.kind === 'SOS_CLUSTER' || alert.kind === 'PRIORITY_SOS') &&
+          (alert.status === 'pending' || mapFocus?.alertId === alert.id) &&
+          typeof alert.lat === 'number' &&
+          typeof alert.lng === 'number'
+      ),
+    [dashboard.alerts, mapFocus?.alertId]
   )
 
   return (
@@ -556,4 +569,4 @@ export function CrisisMap() {
       </div>
     </main>
   )
-}
+})

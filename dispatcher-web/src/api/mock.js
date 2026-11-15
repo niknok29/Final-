@@ -1,3 +1,4 @@
+import { getRolePermissions } from '../auth/permissions.js'
 import { calculateDistanceMeters, calculatePathLengthMeters } from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 
@@ -524,7 +525,19 @@ function createInitialState() {
   }
 }
 
+function createInitialFloodState() {
+  return {
+    active: false,
+    suspiciousCount: 0,
+    filteredCount: 0,
+    accepted: 0,
+    duplicates: 0,
+    throttled: 0,
+  }
+}
+
 let state = createInitialState()
+let floodState = createInitialFloodState()
 let providerState = 'up'
 let breakerState = 'closed'
 let fallbackModeState = null
@@ -585,10 +598,13 @@ const STREAM_SOS_TEMPLATES = [
 ]
 
 function computeStats() {
-  const activeSosItems = state.sos.filter((item) => item.status !== 'resolved')
+  const activeSosItems = state.sos.filter((item) => item.status !== 'resolved' && !item.suspicious)
   const activeSos = activeSosItems.length
   const prioritySos = activeSosItems.filter(
     (item) => item.profile === 'special_needs' || item.priorityRank === 1
+  ).length
+  const suspiciousInFeed = state.sos.filter(
+    (item) => item.suspicious === true || item.isSuspicious === true || item.status === 'suspicious'
   ).length
   const pendingAlerts = state.alerts.filter((item) => item.status === 'pending').length
   const openOrActiveShelters = state.shelters.filter((item) => item.status !== 'closed')
@@ -601,6 +617,7 @@ function computeStats() {
   return {
     activeSos,
     prioritySos,
+    suspiciousSos: Math.max(floodState.suspiciousCount, suspiciousInFeed),
     pendingAlerts,
     shelters: state.shelters.length,
     fullShelters,
@@ -819,6 +836,13 @@ export function subscribeMockEvents(callback) {
   }
 }
 
+const MOCK_DEMO_ACCOUNTS = {
+  dispatcher: { password: 'dispatcher123', role: 'dispatcher', token: 'mock-jwt-dispatcher-2026' },
+  admin: { password: 'admin123', role: 'admin', token: 'mock-jwt-admin-2026' },
+  observer: { password: 'observer123', role: 'observer', token: 'mock-jwt-observer-2026' },
+  viewer: { password: 'viewer123', role: 'viewer', token: 'mock-jwt-viewer-2026' },
+}
+
 export async function mockLogin(username, password) {
   await new Promise((r) => setTimeout(r, 180))
   const key = String(username || '').toLowerCase()
@@ -837,23 +861,15 @@ export async function mockLogin(username, password) {
     mockLoginFailures.delete(key)
   }
 
-  if (username === 'dispatcher' && password === 'dispatcher123') {
+  const account = MOCK_DEMO_ACCOUNTS[username]
+  if (account && password === account.password) {
     mockLoginFailures.delete(key)
     mockLoginLockedUntil.delete(key)
     return {
-      token: 'mock-jwt-dispatcher-2026',
-      role: 'dispatcher',
-      username: 'dispatcher',
-      expiresIn: 3600,
-    }
-  }
-  if (username === 'admin' && password === 'admin123') {
-    mockLoginFailures.delete(key)
-    mockLoginLockedUntil.delete(key)
-    return {
-      token: 'mock-jwt-admin-2026',
-      role: 'admin',
-      username: 'admin',
+      token: account.token,
+      role: account.role,
+      username,
+      permissions: getRolePermissions(account.role),
       expiresIn: 3600,
     }
   }
@@ -872,9 +888,22 @@ export async function mockLogin(username, password) {
   throw err
 }
 
+export async function mockGetMe(session) {
+  const role = session?.role || 'dispatcher'
+  return {
+    username: session?.username || role,
+    role,
+    permissions:
+      Array.isArray(session?.permissions) && session.permissions.length > 0
+        ? session.permissions
+        : getRolePermissions(role),
+  }
+}
+
 export async function mockGetDashboard() {
   return clone({
     stats: computeStats(),
+    flood: floodState,
     zones: state.zones,
     sos: sortSosItems(state.sos),
     shelters: state.shelters,
@@ -884,11 +913,14 @@ export async function mockGetDashboard() {
   })
 }
 
+export const mockGetSnapshot = mockGetDashboard
+
 export async function mockGetRoads() {
   return clone({ items: state.roads })
 }
 
 function buildMockProviderHealth() {
+  const flood = clone(floodState)
   const isHealthy = providerState === 'up' && breakerState === 'closed'
   if (isHealthy) {
     return {
@@ -900,6 +932,7 @@ function buildMockProviderHealth() {
       offline: false,
       fallbackMode: null,
       notice: null,
+      flood,
     }
   }
   if (providerState === 'slow') {
@@ -912,6 +945,7 @@ function buildMockProviderHealth() {
       offline: false,
       fallbackMode: fallbackModeState || 'cache',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+      flood,
     }
   }
   if (providerState === 'http503') {
@@ -924,6 +958,7 @@ function buildMockProviderHealth() {
       offline: true,
       fallbackMode: fallbackModeState || 'static_matrix',
       notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+      flood,
     }
   }
   return {
@@ -935,6 +970,7 @@ function buildMockProviderHealth() {
     offline: true,
     fallbackMode: fallbackModeState || 'straight_line',
     notice: { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null },
+    flood,
   }
 }
 
@@ -1153,6 +1189,119 @@ export async function mockSimSosBurst({ lat, lng, count = 4, type = 'fire', note
   return clone({ created, alert: clusterAlert })
 }
 
+const FLOOD_HAZARDS = ['fire', 'collapse', 'flood', 'medical']
+
+function createFloodSosEntry(zone, type, suspicious, index) {
+  const lat = Number((zone.lat + (Math.random() - 0.5) * 0.012).toFixed(5))
+  const lng = Number((zone.lng + (Math.random() - 0.5) * 0.014).toFixed(5))
+  return {
+    id: `sos-${sosSeq++}`,
+    citizenId: suspicious ? `cit-spam-${Math.floor(index / 6) + 1}` : `cit-flood-${sosSeq}`,
+    type,
+    profile: 'standard',
+    priority: 'normal',
+    priorityRank: 2,
+    lat,
+    lng,
+    zoneId: zone.id,
+    zoneName: zone.name,
+    note: suspicious
+      ? `Avtomatik filtr: şübhəli flood siqnalı #${index + 1}`
+      : `Kütləvi SOS axını #${index + 1} (${zone.name})`,
+    status: 'active',
+    suspicious,
+    floodGenerated: true,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+export async function mockSimFlood({ count = 600 } = {}) {
+  const total = Math.max(10, Math.min(2000, Number(count) || 600))
+  const accepted = Math.round(total * 0.35)
+  const duplicates = Math.round(total * 0.25)
+  const throttled = Math.round(total * 0.18)
+  const suspicious = Math.max(1, total - accepted - duplicates - throttled)
+  const filteredDelta = duplicates + throttled + suspicious
+
+  floodState = {
+    active: true,
+    suspiciousCount: floodState.suspiciousCount + suspicious,
+    filteredCount: floodState.filteredCount + filteredDelta,
+    accepted: floodState.accepted + accepted,
+    duplicates: floodState.duplicates + duplicates,
+    throttled: floodState.throttled + throttled,
+  }
+
+  const validSampleCount = Math.min(accepted, 220)
+  const suspiciousSampleCount = Math.min(suspicious, 40)
+  const generated = []
+
+  for (let i = 0; i < validSampleCount; i += 1) {
+    const zone = state.zones[i % state.zones.length]
+    const type = FLOOD_HAZARDS[i % FLOOD_HAZARDS.length]
+    generated.push(createFloodSosEntry(zone, type, false, i))
+  }
+  for (let j = 0; j < suspiciousSampleCount; j += 1) {
+    const zone = state.zones[(j + 2) % state.zones.length]
+    const type = FLOOD_HAZARDS[(j + 1) % FLOOD_HAZARDS.length]
+    generated.push(createFloodSosEntry(zone, type, true, j))
+  }
+
+  state.sos = [...generated, ...state.sos].slice(0, 600)
+
+  generated.forEach((item) => emitEvent('sos.created', item))
+  state.zones.forEach((z) => {
+    const updated = recalculateZone(z.id)
+    if (updated) emitEvent('zone.updated', updated)
+  })
+  emitEvent('flood.updated', floodState)
+
+  return clone({
+    ok: true,
+    count: total,
+    accepted,
+    duplicates,
+    throttled,
+    suspicious,
+    filteredCount: floodState.filteredCount,
+    suspiciousCount: floodState.suspiciousCount,
+    flood: floodState,
+    stats: computeStats(),
+  })
+}
+
+export async function mockClearSuspiciousSos() {
+  const cleared = Math.max(
+    floodState.suspiciousCount,
+    state.sos.filter(
+      (item) => item.suspicious === true || item.isSuspicious === true || item.status === 'suspicious'
+    ).length
+  )
+
+  state.sos = state.sos.filter(
+    (item) =>
+      item.suspicious !== true &&
+      item.isSuspicious !== true &&
+      item.status !== 'suspicious' &&
+      item.floodGenerated !== true
+  )
+  floodState = createInitialFloodState()
+
+  state.zones.forEach((z) => {
+    const updated = recalculateZone(z.id)
+    if (updated) emitEvent('zone.updated', updated)
+  })
+  emitEvent('flood.updated', floodState)
+  emitEvent('sos.suspicious_cleared', { cleared, flood: clone(floodState) })
+
+  return clone({
+    ok: true,
+    cleared,
+    flood: floodState,
+    stats: computeStats(),
+  })
+}
+
 export async function mockSimReset() {
   state.sos.forEach((s) => {
     if (s.status !== 'resolved') {
@@ -1166,6 +1315,7 @@ export async function mockSimReset() {
   })
 
   state = createInitialState()
+  floodState = createInitialFloodState()
   providerState = 'up'
   breakerState = 'closed'
   fallbackModeState = null
@@ -1176,6 +1326,7 @@ export async function mockSimReset() {
   autoFeedIndex = 0
   stopMockStreams()
   emitEvent('provider.updated', buildMockProviderHealth())
+  emitEvent('flood.updated', floodState)
   if (subscribers.size > 0) {
     startMockStreams()
   }
