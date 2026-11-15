@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
+import { findCrewTargetDistance, formatDistance } from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatNumber } from '../utils/time.js'
 
@@ -109,35 +110,51 @@ export function RightStatusPanel() {
             <span className="panel-count-badge">{formatNumber(dashboard.crews.length, lang)}</span>
           </div>
           <div className="crews-list">
-            {dashboard.crews.map((crew) => (
-              <button
-                key={crew.id}
-                type="button"
-                className="crew-row"
-                onClick={() => focusMap({ lat: crew.lat, lng: crew.lng, zoom: 15 })}
-              >
-                <div className="crew-info">
-                  <div className="crew-name-row">
-                    <span className="crew-name">{sanitizeUserNote(crew.name, 60)}</span>
-                    {crew.accessibleTransport && (
-                      <span className="acc-badge" title={t('rightPanel.accessibleTransport')}>
-                        {t('rightPanel.accessibleTransport')}
+            {dashboard.crews.map((crew) => {
+              const crewDist = findCrewTargetDistance(
+                crew,
+                dashboard.alerts,
+                dashboard.sos,
+                dashboard.zones
+              )
+
+              return (
+                <button
+                  key={crew.id}
+                  type="button"
+                  className="crew-row"
+                  onClick={() => focusMap({ lat: crew.lat, lng: crew.lng, zoom: 15 })}
+                >
+                  <div className="crew-info">
+                    <div className="crew-name-row">
+                      <span className="crew-name">{sanitizeUserNote(crew.name, 60)}</span>
+                      {crew.accessibleTransport && (
+                        <span className="acc-badge" title={t('rightPanel.accessibleTransport')}>
+                          {t('rightPanel.accessibleTransport')}
+                        </span>
+                      )}
+                    </div>
+                    <span className="crew-assign">
+                      {crew.assignedAlertId
+                        ? t('rightPanel.assignedTo', {
+                            id: sanitizeUserNote(crew.assignedAlertId, 30),
+                          })
+                        : t('rightPanel.unassigned')}
+                    </span>
+                    {crewDist && (
+                      <span className="crew-distance">
+                        {t('rightPanel.distanceToIncident', {
+                          distance: formatDistance(crewDist.distanceMeters, lang),
+                        })}
                       </span>
                     )}
                   </div>
-                  <span className="crew-assign">
-                    {crew.assignedAlertId
-                      ? t('rightPanel.assignedTo', {
-                          id: sanitizeUserNote(crew.assignedAlertId, 30),
-                        })
-                      : t('rightPanel.unassigned')}
+                  <span className={`crew-badge crew-${crew.status}`}>
+                    {t(`rightPanel.crewStatuses.${crew.status}`, { defaultValue: crew.status })}
                   </span>
-                </div>
-                <span className={`crew-badge crew-${crew.status}`}>
-                  {t(`rightPanel.crewStatuses.${crew.status}`, { defaultValue: crew.status })}
-                </span>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
         </section>
       </div>

@@ -25,7 +25,7 @@ This guide covers running all modules of the **Urban Crisis & Crowd Evacuation E
 
 ### A. Live Backend Mode (Current Default)
 
-`dispatcher-web/.env` is currently configured to connect to the live FastAPI backend (`VITE_USE_MOCK=false`):
+`dispatcher-web/.env` is currently configured to connect to the live FastAPI backend (`VITE_USE_MOCK=false`), and the client defaults to live mode when `.env` is absent. Copy `.env.example` to create your local `.env`:
 
 ```env
 VITE_API_URL=http://localhost:8000
@@ -47,6 +47,7 @@ VITE_USE_MOCK=false
 3. **Start the Dispatcher Control-Room (`dispatcher-web/`) on port `5174`:**
    ```bash
    cd dispatcher-web
+   copy .env.example .env
    npm install
    npm run dev
    ```

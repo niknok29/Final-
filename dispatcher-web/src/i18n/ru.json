@@ -27,8 +27,18 @@
     "routingUp": "UP",
     "routingDown": "DOWN",
     "routingSlow": "SLOW",
+    "routingDegraded": "DEGRADED",
+    "routingHttp503": "HTTP 503",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "ОФЛАЙН / РЕЖИМ РЕЗЕРВНОГО МАРШРУТА",
+    "backupModeNotice": "Работает в автономном / резервном режиме маршрутизации",
+    "backupModeSlowNotice": "Работает в автономном / резервном режиме маршрутизации",
+    "fallbackModes": {
+      "cache": "режим: cache",
+      "static_matrix": "режим: static_matrix",
+      "straight_line": "режим: straight_line"
+    },
     "muteAudio": "Выключить звук",
     "unmuteAudio": "Включить звук",
     "simulationBtn": "Симуляция",
@@ -37,6 +47,9 @@
       "dispatcher": "Диспетчер",
       "admin": "Админ"
     }
+  },
+  "notices": {
+    "OFFLINE_BACKUP_ROUTE_MODE": "Работает в автономном / резервном режиме маршрутизации"
   },
   "stats": {
     "activeSos": "Активные SOS",
@@ -74,6 +87,7 @@
     "flyHint": "Нажмите для перехода на карте",
     "priorityBadge": "♿ ПРИОРИТЕТ #1",
     "priorityOnly": "♿ Только приоритетные",
+    "nearestShelter": "Ближайшее убежище: {{name}} ({{distance}})",
     "filters": {
       "all": "Все",
       "fire": "Пожар",
@@ -125,6 +139,11 @@
       "accessibleTransport": "Доступный транспорт",
       "reportedAt": "Время",
       "priorityCritical": "♿ Приоритет #1 (Особые потребности)",
+      "radius": "Радиус",
+      "alertRadius": "Радиус кластера",
+      "nearestShelter": "Ближайшее убежище",
+      "distanceToTarget": "Расстояние до инцидента",
+      "roadLength": "Протяженность",
       "yes": "Да (♿)",
       "no": "Нет"
     }
@@ -137,6 +156,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Назначение: {{id}}",
     "unassigned": "В резерве",
+    "distanceToIncident": "До инцидента: {{distance}}",
     "accessible": "♿ Доступно",
     "notAccessible": "Без пандуса",
     "accessibleTransport": "♿ Доступный транспорт",
@@ -175,8 +195,9 @@
     "sendBurst": "Отправить 4 SOS",
     "providerSection": "Провайдер маршрутизации",
     "providerUp": "Up",
-    "providerSlow": "Slow",
+    "providerSlow": "Slow (>5s)",
     "providerDown": "Down",
+    "providerHttp503": "HTTP 503",
     "resetSection": "Сброс",
     "resetBtn": "Сбросить симуляцию"
   },

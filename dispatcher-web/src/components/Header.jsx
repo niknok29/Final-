@@ -10,8 +10,11 @@ export function Header() {
   const {
     user,
     connectionStatus,
+    healthStatus,
+    routingDegraded,
     routingProvider,
     routingBreaker,
+    routingOffline,
     audioMuted,
     simDrawerOpen,
     toggleAudioMuted,
@@ -23,19 +26,34 @@ export function Header() {
   const roleLabel = t(`header.roles.${user?.role}`, { defaultValue: user?.role || '' })
 
   const isBreakerOpen = routingBreaker === 'open'
-  const providerPillClass =
-    isBreakerOpen || routingProvider === 'down'
-      ? 'status-pill-down'
-      : routingProvider === 'slow'
-        ? 'status-pill-slow'
-        : 'status-pill-up'
+  const isHardOutage =
+    isBreakerOpen ||
+    routingOffline ||
+    routingProvider === 'down' ||
+    routingProvider === 'http503'
+  const isDegradedOrSlow =
+    !isHardOutage &&
+    (routingDegraded ||
+      routingProvider === 'slow' ||
+      routingProvider === 'degraded' ||
+      healthStatus === 'degraded')
+
+  const providerPillClass = isHardOutage
+    ? 'status-pill-down'
+    : isDegradedOrSlow
+      ? 'status-pill-slow'
+      : 'status-pill-up'
 
   const providerLabel =
-    routingProvider === 'slow'
-      ? t('header.routingSlow')
+    routingProvider === 'http503'
+      ? t('header.routingHttp503')
       : routingProvider === 'down'
         ? t('header.routingDown')
-        : t('header.routingUp')
+        : routingProvider === 'slow'
+          ? t('header.routingSlow')
+          : routingDegraded || routingProvider === 'degraded' || healthStatus === 'degraded'
+            ? t('header.routingDegraded')
+            : t('header.routingUp')
 
   return (
     <header className="ctrl-header">

@@ -27,8 +27,18 @@
     "routingUp": "UP",
     "routingDown": "DOWN",
     "routingSlow": "SLOW",
+    "routingDegraded": "DEGRADED",
+    "routingHttp503": "HTTP 503",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "OFLAYN / EHTİYAT MARŞRUT REJİMİ",
+    "backupModeNotice": "Oflayn / Ehtiyat marşrut rejimində işləyir",
+    "backupModeSlowNotice": "Oflayn / Ehtiyat marşrut rejimində işləyir",
+    "fallbackModes": {
+      "cache": "rejim: cache",
+      "static_matrix": "rejim: static_matrix",
+      "straight_line": "rejim: straight_line"
+    },
     "muteAudio": "Səsi bağla",
     "unmuteAudio": "Səsi aç",
     "simulationBtn": "Simulyasiya",
@@ -37,6 +47,9 @@
       "dispatcher": "Dispetçer",
       "admin": "Admin"
     }
+  },
+  "notices": {
+    "OFFLINE_BACKUP_ROUTE_MODE": "Oflayn / Ehtiyat marşrut rejimində işləyir"
   },
   "stats": {
     "activeSos": "Aktiv SOS",
@@ -74,6 +87,7 @@
     "flyHint": "Xəritədə baxmaq üçün klikləyin",
     "priorityBadge": "♿ PRİORİTET #1",
     "priorityOnly": "♿ Yalnız prioritet",
+    "nearestShelter": "Ən yaxın sığınacaq: {{name}} ({{distance}})",
     "filters": {
       "all": "Hamısı",
       "fire": "Yanğın",
@@ -125,6 +139,11 @@
       "accessibleTransport": "Əlçatan nəqliyyat",
       "reportedAt": "Vaxt",
       "priorityCritical": "♿ Prioritet #1 (Xüsusi ehtiyac)",
+      "radius": "Radius",
+      "alertRadius": "Klaster radiusu",
+      "nearestShelter": "Ən yaxın sığınacaq",
+      "distanceToTarget": "Hadisəyə məsafə",
+      "roadLength": "Uzunluq",
       "yes": "Var (♿)",
       "no": "Yoxdur"
     }
@@ -137,6 +156,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Təyinat: {{id}}",
     "unassigned": "Sərbəst növbə",
+    "distanceToIncident": "Hadisəyə məsafə: {{distance}}",
     "accessible": "♿ Əlçatan",
     "notAccessible": "Məhdud giriş",
     "accessibleTransport": "♿ Əlçatan nəqliyyat",
@@ -175,8 +195,9 @@
     "sendBurst": "4 SOS Göndər",
     "providerSection": "Marşrutlaşdırma Provayderi",
     "providerUp": "Up",
-    "providerSlow": "Slow",
+    "providerSlow": "Slow (>5s)",
     "providerDown": "Down",
+    "providerHttp503": "HTTP 503",
     "resetSection": "Bərpa",
     "resetBtn": "Simulyasiyanı Sıfırla"
   },

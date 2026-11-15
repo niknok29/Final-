@@ -16,7 +16,7 @@ import {
 
 const SESSION_KEY = 'dispatcher_session'
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false'
+export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 let memorySession = null
 let onUnauthorizedCb = null
@@ -80,10 +80,28 @@ async function apiFetch(path, options = {}) {
     headers.Authorization = `Bearer ${session.token}`
   }
 
-  const response = await fetch(`${API_BASE_URL}${targetPath}`, {
-    ...options,
-    headers,
-  })
+  const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timerId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
+
+  let response
+  try {
+    response = await fetch(`${API_BASE_URL}${targetPath}`, {
+      ...options,
+      headers,
+      signal: options.signal || controller?.signal,
+    })
+  } catch (networkErr) {
+    if (networkErr?.name === 'AbortError') {
+      const err = new Error('Request timed out')
+      err.status = 504
+      err.code = 'REQUEST_TIMEOUT'
+      throw err
+    }
+    throw networkErr
+  } finally {
+    if (timerId) clearTimeout(timerId)
+  }
 
   if (response.status === 401 || response.status === 403) {
     const isLoginEndpoint = path === '/api/auth/login'
@@ -221,10 +239,26 @@ export async function simSosBurst({ lat, lng, count = 4, type = 'fire' }) {
 
 export async function simSetProvider(state) {
   if (USE_MOCK) return mockSimSetProvider(state)
-  return apiFetch('/api/sim/provider', {
-    method: 'POST',
-    body: JSON.stringify({ state }),
-  })
+  try {
+    return await apiFetch('/api/sim/provider', {
+      method: 'POST',
+      body: JSON.stringify({ state }),
+    })
+  } catch (err) {
+    if (state === 'http503' && (err?.status === 400 || err?.status === 422)) {
+      const fallbackRes = await apiFetch('/api/sim/provider', {
+        method: 'POST',
+        body: JSON.stringify({ state: 'down' }),
+      })
+      return {
+        ...(fallbackRes || {}),
+        ok: true,
+        state: 'http503',
+        fallbackFromHttp503: true,
+      }
+    }
+    throw err
+  }
 }
 
 export async function simReset() {

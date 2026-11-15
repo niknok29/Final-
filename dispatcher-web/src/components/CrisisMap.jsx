@@ -15,6 +15,12 @@ import {
 } from 'react-leaflet'
 import { can } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
+import {
+  calculatePathLengthMeters,
+  findCrewTargetDistance,
+  findNearestShelter,
+  formatDistance,
+} from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatClockTime, formatNumber } from '../utils/time.js'
 
@@ -206,7 +212,15 @@ export function CrisisMap() {
   })
 
   const overlayRoads = dashboard.roads.filter(
-    (r) => Array.isArray(r.path) && (r.status === 'closed' || r.accessible === false)
+    (r) => Array.isArray(r.path) && r.path.length >= 2
+  )
+
+  const alertCircles = dashboard.alerts.filter(
+    (alert) =>
+      (alert.kind === 'SOS_CLUSTER' || alert.kind === 'PRIORITY_SOS') &&
+      (alert.status === 'pending' || mapFocus?.alertId === alert.id) &&
+      typeof alert.lat === 'number' &&
+      typeof alert.lng === 'number'
   )
 
   return (
@@ -228,11 +242,12 @@ export function CrisisMap() {
 
           {dashboard.zones.map((zone) => {
             const style = ZONE_COLORS[zone.level] || ZONE_COLORS.normal
+            const zoneRadius = zone.radiusMeters || 500
             return (
               <Circle
                 key={zone.id}
                 center={[zone.lat, zone.lng]}
-                radius={zone.radius || 1300}
+                radius={zoneRadius}
                 pathOptions={{
                   color: style.color,
                   fillColor: style.fillColor,
@@ -240,9 +255,15 @@ export function CrisisMap() {
                   weight: 1.5,
                 }}
               >
+                <Tooltip sticky>
+                  {sanitizeUserNote(zone.name, 60)} • {formatDistance(zoneRadius, lang)}
+                </Tooltip>
                 <Popup>
                   <div className="map-popup">
                     <strong>{sanitizeUserNote(zone.name, 60)}</strong>
+                    <div>
+                      {t('map.popup.radius')}: {formatDistance(zoneRadius, lang)}
+                    </div>
                     <div>
                       {t('map.popup.activeSos')}: {formatNumber(zone.activeSos ?? 0, lang)}
                     </div>
@@ -256,43 +277,88 @@ export function CrisisMap() {
             )
           })}
 
+          {alertCircles.map((alert) => {
+            const alertRadius = alert.details?.radiusMeters || 500
+            const zoneLabel = sanitizeUserNote(
+              alert.zoneName || zoneNamesById[alert.zoneId] || alert.zoneId || '-',
+              60
+            )
+            return (
+              <Circle
+                key={`alert-radius-${alert.id}`}
+                center={[alert.lat, alert.lng]}
+                radius={alertRadius}
+                pathOptions={{
+                  color: '#ef4444',
+                  fillColor: '#ef4444',
+                  fillOpacity: 0.14,
+                  weight: 2,
+                  dashArray: '6 4',
+                }}
+              >
+                <Tooltip sticky permanent={mapFocus?.alertId === alert.id}>
+                  {zoneLabel} • {t('map.popup.alertRadius')}: {formatDistance(alertRadius, lang)}
+                </Tooltip>
+                <Popup>
+                  <div className="map-popup">
+                    <strong>{zoneLabel}</strong>
+                    <div>
+                      {t('map.popup.alertRadius')}: {formatDistance(alertRadius, lang)}
+                    </div>
+                    {alert.message && (
+                      <p className="map-popup-note">{sanitizeUserNote(alert.message, 160)}</p>
+                    )}
+                  </div>
+                </Popup>
+              </Circle>
+            )
+          })}
+
           {overlayRoads.map((road) => {
             const isClosed = road.status === 'closed'
-            return (
-              <Polyline
-                key={road.id}
-                positions={road.path}
-                pathOptions={
-                  isClosed
-                    ? {
-                        color: '#ef4444',
-                        weight: 5,
-                        dashArray: '10 8',
-                        opacity: 0.92,
-                      }
-                    : {
-                        color: '#f59e0b',
-                        weight: 4,
-                        dashArray: '4 6',
-                        opacity: 0.78,
-                      }
+            const isInaccessible = road.accessible === false
+            const roadLengthMeters = road.lengthMeters || calculatePathLengthMeters(road.path)
+            const lengthLabel = formatDistance(roadLengthMeters, lang)
+            const pathOptions = isClosed
+              ? {
+                  color: '#ef4444',
+                  weight: 5,
+                  dashArray: '10 8',
+                  opacity: 0.92,
                 }
-              >
+              : isInaccessible
+                ? {
+                    color: '#f59e0b',
+                    weight: 4,
+                    dashArray: '4 6',
+                    opacity: 0.8,
+                  }
+                : {
+                    color: '#22c55e',
+                    weight: 3,
+                    opacity: 0.48,
+                  }
+
+            return (
+              <Polyline key={road.id} positions={road.path} pathOptions={pathOptions}>
                 <Tooltip sticky>
-                  {sanitizeUserNote(road.name, 60)} •{' '}
+                  {sanitizeUserNote(road.name, 60)} ({lengthLabel}) •{' '}
                   {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')} •{' '}
-                  {road.accessible === false ? t('rightPanel.notAccessible') : t('rightPanel.accessible')}
+                  {isInaccessible ? t('rightPanel.notAccessible') : t('rightPanel.accessible')}
                 </Tooltip>
                 <Popup>
                   <div className="map-popup">
                     <strong>{sanitizeUserNote(road.name, 80)}</strong>
+                    <div>
+                      {t('map.popup.roadLength')}: {lengthLabel}
+                    </div>
                     <div>
                       {t('map.popup.status')}:{' '}
                       {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')}
                     </div>
                     <div>
                       {t('map.popup.accessible')}:{' '}
-                      {road.accessible === false ? t('map.popup.no') : t('map.popup.yes')}
+                      {isInaccessible ? t('map.popup.no') : t('map.popup.yes')}
                     </div>
                   </div>
                 </Popup>
@@ -341,35 +407,49 @@ export function CrisisMap() {
             )
           })}
 
-          {dashboard.crews.map((crew) => (
-            <Marker
-              key={crew.id}
-              position={[crew.lat, crew.lng]}
-              icon={getCrewIcon(crew.status, Boolean(crew.accessibleTransport))}
-            >
-              <Popup>
-                <div className="map-popup">
-                  <strong>
-                    {crew.accessibleTransport ? '♿ ' : ''}
-                    {sanitizeUserNote(crew.name, 80)}
-                  </strong>
-                  <div>
-                    {t('map.popup.status')}:{' '}
-                    {t(`rightPanel.crewStatuses.${crew.status}`, { defaultValue: crew.status })}
-                  </div>
-                  <div>
-                    {t('map.popup.accessibleTransport')}:{' '}
-                    {crew.accessibleTransport ? t('map.popup.yes') : t('map.popup.no')}
-                  </div>
-                  {crew.assignedAlertId && (
+          {dashboard.crews.map((crew) => {
+            const crewDist = findCrewTargetDistance(
+              crew,
+              dashboard.alerts,
+              dashboard.sos,
+              dashboard.zones
+            )
+            return (
+              <Marker
+                key={crew.id}
+                position={[crew.lat, crew.lng]}
+                icon={getCrewIcon(crew.status, Boolean(crew.accessibleTransport))}
+              >
+                <Popup>
+                  <div className="map-popup">
+                    <strong>
+                      {crew.accessibleTransport ? '♿ ' : ''}
+                      {sanitizeUserNote(crew.name, 80)}
+                    </strong>
                     <div>
-                      {t('map.popup.assignedAlert')}: {sanitizeUserNote(crew.assignedAlertId, 40)}
+                      {t('map.popup.status')}:{' '}
+                      {t(`rightPanel.crewStatuses.${crew.status}`, { defaultValue: crew.status })}
                     </div>
-                  )}
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                    <div>
+                      {t('map.popup.accessibleTransport')}:{' '}
+                      {crew.accessibleTransport ? t('map.popup.yes') : t('map.popup.no')}
+                    </div>
+                    {crewDist && (
+                      <div>
+                        {t('map.popup.distanceToTarget')}:{' '}
+                        {formatDistance(crewDist.distanceMeters, lang)}
+                      </div>
+                    )}
+                    {crew.assignedAlertId && (
+                      <div>
+                        {t('map.popup.assignedAlert')}: {sanitizeUserNote(crew.assignedAlertId, 40)}
+                      </div>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            )
+          })}
 
           {visibleSos.map((item) => {
             const isPriority = item.profile === 'special_needs' || item.priorityRank === 1
@@ -377,6 +457,7 @@ export function CrisisMap() {
               item.zoneName || zoneNamesById[item.zoneId] || item.zoneId || '',
               40
             )
+            const nearest = findNearestShelter(item.lat, item.lng, dashboard.shelters, isPriority)
             return (
               <Marker
                 key={item.id}
@@ -403,6 +484,13 @@ export function CrisisMap() {
                     <p className="map-popup-note">
                       {sanitizeUserNote(item.note, 220) || t('sos.noNote')}
                     </p>
+                    {nearest && (
+                      <div>
+                        {t('map.popup.nearestShelter')}:{' '}
+                        {sanitizeUserNote(nearest.shelter.name, 50)} (
+                        {formatDistance(nearest.distanceMeters, lang)})
+                      </div>
+                    )}
                     {(item.createdAt || item.ts) && (
                       <div>
                         {t('map.popup.reportedAt')}:{' '}

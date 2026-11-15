@@ -27,8 +27,18 @@
     "routingUp": "UP",
     "routingDown": "DOWN",
     "routingSlow": "SLOW",
+    "routingDegraded": "DEGRADED",
+    "routingHttp503": "HTTP 503",
     "breakerClosed": "breaker: closed",
     "breakerOpen": "breaker: open",
+    "backupModeTag": "OFFLINE / BACKUP ROUTE MODE",
+    "backupModeNotice": "Offline / backup route mode is active",
+    "backupModeSlowNotice": "Offline / backup route mode is active",
+    "fallbackModes": {
+      "cache": "fallback: cache",
+      "static_matrix": "fallback: static_matrix",
+      "straight_line": "fallback: straight_line"
+    },
     "muteAudio": "Mute alerts",
     "unmuteAudio": "Unmute alerts",
     "simulationBtn": "Simulation",
@@ -37,6 +47,9 @@
       "dispatcher": "Dispatcher",
       "admin": "Admin"
     }
+  },
+  "notices": {
+    "OFFLINE_BACKUP_ROUTE_MODE": "Offline / backup route mode is active"
   },
   "stats": {
     "activeSos": "Active SOS",
@@ -74,6 +87,7 @@
     "flyHint": "Click to focus on map",
     "priorityBadge": "♿ PRIORITY #1",
     "priorityOnly": "♿ Priority only",
+    "nearestShelter": "Nearest shelter: {{name}} ({{distance}})",
     "filters": {
       "all": "All",
       "fire": "Fire",
@@ -125,6 +139,11 @@
       "accessibleTransport": "Accessible transport",
       "reportedAt": "Reported",
       "priorityCritical": "♿ Priority #1 (Special needs)",
+      "radius": "Radius",
+      "alertRadius": "Cluster radius",
+      "nearestShelter": "Nearest shelter",
+      "distanceToTarget": "Distance to incident",
+      "roadLength": "Length",
       "yes": "Yes (♿)",
       "no": "No"
     }
@@ -137,6 +156,7 @@
     "capacityCount": "{{occupancy}} / {{capacity}}",
     "assignedTo": "Assigned: {{id}}",
     "unassigned": "Standing by",
+    "distanceToIncident": "To incident: {{distance}}",
     "accessible": "♿ Accessible",
     "notAccessible": "Not step-free",
     "accessibleTransport": "♿ Accessible transport",
@@ -175,8 +195,9 @@
     "sendBurst": "Send 4 SOS Burst",
     "providerSection": "Routing Provider",
     "providerUp": "Up",
-    "providerSlow": "Slow",
+    "providerSlow": "Slow (>5s)",
     "providerDown": "Down",
+    "providerHttp503": "HTTP 503",
     "resetSection": "Reset",
     "resetBtn": "Reset Simulation"
   },
