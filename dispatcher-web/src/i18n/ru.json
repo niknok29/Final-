@@ -140,6 +140,9 @@
       "critical": "Критическая",
       "prioritySos": "Приоритет SOS",
       "closedRoad": "Закрытая дорога",
+      "roadblock": "Перекрытие дороги",
+      "routeExact": "Точный маршрут",
+      "routeApprox": "Прибл. маршрут",
       "shelter": "Пункт сбора",
       "crew": "Бригада"
     },
@@ -153,6 +156,8 @@
       "assignedAlert": "Назначение",
       "roadClosed": "Дорога закрыта",
       "roadOpen": "Дорога открыта",
+      "blockReason": "Причина перекрытия",
+      "roadBlockedReasonDefault": "Движение временно ограничено",
       "accessible": "Доступность",
       "accessibleTransport": "Доступный транспорт",
       "reportedAt": "Время",
@@ -162,6 +167,12 @@
       "nearestShelter": "Ближайшее убежище",
       "distanceToTarget": "Расстояние до инцидента",
       "roadLength": "Протяженность",
+      "routeTitle": "Маршрут эвакуации",
+      "routeExact": "Точная геометрия улиц (онлайн)",
+      "routeApprox": "Приблизительный маршрут (резервный/офлайн)",
+      "routeDistance": "Дистанция маршрута",
+      "routeEta": "Оцен. время",
+      "minutesShort": "мин",
       "yes": "Да (♿)",
       "no": "Нет"
     }

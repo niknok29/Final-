@@ -9,6 +9,7 @@ import {
   mockGetHealth,
   mockGetMe,
   mockGetRoads,
+  mockGetRoute,
   mockLogin,
   mockSimCloseRoad,
   mockSimFlood,
@@ -287,6 +288,91 @@ export async function getMe() {
         ? session.permissions
         : getRolePermissions(role),
   }
+}
+
+export function normalizeRoutePayload(data) {
+  if (!data || typeof data !== 'object') return null
+
+  const rawGeometry =
+    data.geometry ||
+    data.route?.geometry ||
+    data.route?.path ||
+    data.path ||
+    []
+
+  const geometry = Array.isArray(rawGeometry)
+    ? rawGeometry
+        .map((pt) => {
+          if (Array.isArray(pt) && pt.length >= 2) {
+            const lat = Number(pt[0])
+            const lng = Number(pt[1])
+            return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null
+          }
+          if (pt && typeof pt === 'object') {
+            const lat = Number(pt.lat)
+            const lng = Number(pt.lng)
+            return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null
+          }
+          return null
+        })
+        .filter(Boolean)
+    : []
+
+  const explicitApprox =
+    typeof data.geometryApprox === 'boolean'
+      ? data.geometryApprox
+      : typeof data.route?.geometryApprox === 'boolean'
+        ? data.route.geometryApprox
+        : null
+
+  const geometryApprox =
+    explicitApprox !== null
+      ? explicitApprox
+      : Boolean(
+          data.offline ||
+            data.source === 'fallback' ||
+            data.fallbackMode === 'straight_line' ||
+            data.fallbackMode === 'static_matrix'
+        )
+
+  const distanceMeters = Number.isFinite(Number(data.route?.distanceMeters ?? data.distanceMeters))
+    ? Number(data.route?.distanceMeters ?? data.distanceMeters)
+    : null
+  const durationSec = Number.isFinite(Number(data.route?.durationSec ?? data.durationSec))
+    ? Number(data.route?.durationSec ?? data.durationSec)
+    : null
+
+  return {
+    geometry,
+    geometryApprox,
+    distanceMeters,
+    durationSec,
+    shelter: data.shelter || null,
+    from: data.from || null,
+    to: data.to || null,
+    reason: data.reason || null,
+    rerouted: Boolean(data.rerouted),
+    source: data.source || (geometryApprox ? 'fallback' : 'provider'),
+    offline: Boolean(data.offline),
+    fallbackMode: data.fallbackMode || null,
+    notice: data.notice || null,
+  }
+}
+
+export async function getRoute({ fromLat, fromLng, shelterId = null, profile = 'standard' } = {}) {
+  if (USE_MOCK) {
+    const raw = await mockGetRoute({ fromLat, fromLng, shelterId, profile })
+    return normalizeRoutePayload(raw)
+  }
+  const params = new URLSearchParams()
+  if (Number.isFinite(Number(fromLat))) params.set('fromLat', String(fromLat))
+  if (Number.isFinite(Number(fromLng))) params.set('fromLng', String(fromLng))
+  if (shelterId) params.set('shelterId', String(shelterId))
+  if (profile === 'special_needs' || profile === 'standard') {
+    params.set('profile', profile)
+  }
+  const raw = await apiFetch(`/api/route?${params.toString()}`)
+  return normalizeRoutePayload(raw)
 }
 
 export async function getRoads() {

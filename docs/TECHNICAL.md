@@ -155,3 +155,18 @@
 - **High-Load UI Responsiveness (`DashboardContext.jsx`, `SosFeedPanel.jsx`, `CrisisMap.jsx`, `RightStatusPanel.jsx`):**
   - Incoming WebSocket frames are buffered in a queue and flushed every **200 ms** via a single batched `APPLY_WS_BATCH` reducer update (building `Map`-based SOS upserts and sorting once per batch) instead of per-event re-renders.
   - `SosFeedPanel.jsx` and `CrisisMap.jsx` each cap live rendered SOS rows/markers at **200** items, extract memoized `SosCardRow`, wrap heavy panels in `React.memo`, and compute filtered/sorted lists inside `useMemo` so 600+ event bursts never freeze the browser.
+
+---
+
+## 7. Map Accuracy ("Xəritə Dəqiqliyi") — Icons, Attribution, Blocked Roads & Route Geometry
+
+- **Leaflet Default Icon Bundle Fix & OSM Attribution (`CrisisMap.jsx`, `index.css`):**
+  - Explicitly imports `marker-icon-2x.png`, `marker-icon.png`, and `marker-shadow.png` from `leaflet/dist/images/`, clears `L.Icon.Default.prototype._getIconUrl`, and calls `L.Icon.Default.mergeOptions(...)` so Vite production builds always resolve Leaflet marker assets.
+  - Explicitly enables `<MapContainer attributionControl={true} />` and `<TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />` with non-overlapping `.leaflet-control-attribution` positioning above the bottom overlay bar.
+- **Blocked Roads (`CrisisMap.jsx`, `mock.js`, `DashboardContext.jsx`):**
+  - Roads where `status === 'closed' | 'blocked'` or `blocked === true` render both a prominent dashed red `<Polyline>` and a dedicated midpoint/blockage red roadblock `<Marker>` (`getPolylineMidpoint()`), with tooltips and popups showing road name, blockage status, metric length, and localized blockage reason (`road.reason || road.blockReason`).
+- **Route `geometry` & `geometryApprox` Rendering (`client.js`, `mock.js`, `DashboardContext.jsx`, `CrisisMap.jsx`):**
+  - `normalizeRoutePayload()` and `getRoute()` (`/api/route`, WS `reroute`, and `route.updated` events) parse `geometry` (`[[lat, lng], ...]`) and `geometryApprox` (`boolean`).
+  - Live exact routes (`geometryApprox: false`) render as a solid blue street-geometry polyline; offline/backup approximations (`geometryApprox: true`) render as a dashed amber polyline with approximate route indicators, distance, ETA, and destination shelter readout.
+- **Exact Crew & Shelter Coordinates (`CrisisMap.jsx`, `mock.js`):**
+  - `getExactLatLng(item)` reads finite `lat`/`lng` (or `location.lat`/`location.lng`) for all crews (`briqada`), shelters (`sığınacaq`), zones, alerts, and SOS markers with zero synthetic coordinate jitter or offset (including dispatched crews in `mockApproveAlert`).

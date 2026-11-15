@@ -8,8 +8,10 @@ import {
   getDashboard,
   getHealth,
   getMe,
+  getRoute,
   getStoredSession,
   login,
+  normalizeRoutePayload,
   saveSession,
   setApiCallbacks,
   simCloseRoad,
@@ -113,6 +115,7 @@ function normalizeFloodTelemetry(currentFlood = EMPTY_FLOOD, payload, sosList = 
 
   const hasExplicitFloodFields =
     payload.flood !== undefined ||
+    payload.stats?.flood !== undefined ||
     payload.floodActive !== undefined ||
     payload.suspiciousCount !== undefined ||
     payload.suspiciousSos !== undefined ||
@@ -131,9 +134,15 @@ function normalizeFloodTelemetry(currentFlood = EMPTY_FLOOD, payload, sosList = 
     }
   }
 
-  const src = payload.flood && typeof payload.flood === 'object' ? payload.flood : payload
+  const src =
+    payload.flood && typeof payload.flood === 'object'
+      ? payload.flood
+      : payload.stats?.flood && typeof payload.stats.flood === 'object'
+        ? payload.stats.flood
+        : payload
   const rawSuspicious =
     src.suspiciousCount ??
+    src.suspiciousLastMinute ??
     src.suspiciousSos ??
     src.suspicious ??
     payload.stats?.suspiciousSos ??
@@ -332,11 +341,49 @@ function createInitialState() {
     priorityOnlyFilter: false,
     recentSosIds: [],
     mapFocus: null,
+    activeRoute: null,
     simTargetCoords: { lat: 40.4093, lng: 49.8671 },
     audioMuted: false,
     simDrawerOpen: false,
     busyAlertIds: [],
     toasts: [],
+  }
+}
+
+function buildFallbackRouteFromPayload(data, shelters) {
+  const fromLat = Number(data?.from?.lat ?? data?.fromLat)
+  const fromLng = Number(data?.from?.lng ?? data?.fromLng)
+  const targetShelter =
+    data?.shelter ||
+    shelters.find((s) => s.id === data?.shelterId || s.id === data?.toShelterId) ||
+    null
+  const toLat = Number(data?.to?.lat ?? targetShelter?.lat)
+  const toLng = Number(data?.to?.lng ?? targetShelter?.lng)
+  if (
+    !Number.isFinite(fromLat) ||
+    !Number.isFinite(fromLng) ||
+    !Number.isFinite(toLat) ||
+    !Number.isFinite(toLng)
+  ) {
+    return null
+  }
+  return {
+    geometry: [
+      [fromLat, fromLng],
+      [toLat, toLng],
+    ],
+    geometryApprox: true,
+    distanceMeters: null,
+    durationSec: null,
+    shelter: targetShelter || null,
+    from: { lat: fromLat, lng: fromLng },
+    to: { lat: toLat, lng: toLng },
+    reason: data?.reason || null,
+    rerouted: true,
+    source: 'fallback',
+    offline: Boolean(data?.offline),
+    fallbackMode: data?.fallbackMode || 'straight_line',
+    notice: data?.notice || null,
   }
 }
 
@@ -366,13 +413,22 @@ function applyWsEventsToState(state, events) {
       continue
     }
 
-    if (type === 'reroute') {
+    if (type === 'reroute' || type === 'route.updated') {
       if (
         data.offline !== undefined ||
         data.fallbackMode !== undefined ||
         data.notice !== undefined
       ) {
         nextState = applyProviderTelemetry(nextState, data)
+      }
+      const normalized = normalizeRoutePayload(data)
+      if (normalized && normalized.geometry.length >= 2) {
+        nextState = { ...nextState, activeRoute: normalized }
+      } else {
+        const synthesized = buildFallbackRouteFromPayload(data, shelters)
+        if (synthesized) {
+          nextState = { ...nextState, activeRoute: synthesized }
+        }
       }
       continue
     }
@@ -419,7 +475,18 @@ function applyWsEventsToState(state, events) {
       shelters = upsertById(shelters, data)
       dashboardDirty = true
     } else if (type === 'road.updated') {
-      roads = upsertById(roads, data)
+      const normalizedRoad = {
+        ...data,
+        blocked: data.blocked ?? (data.status === 'closed' || data.status === 'blocked'),
+        reason:
+          data.status === 'open'
+            ? null
+            : data.reason ?? data.blockReason ?? undefined,
+      }
+      if (normalizedRoad.reason === undefined) {
+        delete normalizedRoad.reason
+      }
+      roads = upsertById(roads, normalizedRoad)
       dashboardDirty = true
     } else if (type === 'crew.updated') {
       crews = upsertById(crews, data)
@@ -500,6 +567,8 @@ function reducer(state, action) {
         simDrawerOpen: false,
         recentSosIds: [],
         busyAlertIds: [],
+        activeRoute: null,
+        mapFocus: null,
       }
 
     case 'SET_DASHBOARD': {
@@ -700,6 +769,12 @@ function reducer(state, action) {
         mapFocus: { ...action.payload, seq: (state.mapFocus?.seq || 0) + 1 },
       }
 
+    case 'SET_ACTIVE_ROUTE':
+      return {
+        ...state,
+        activeRoute: action.payload || null,
+      }
+
     case 'SET_SIM_TARGET_COORDS':
       return { ...state, simTargetCoords: action.payload }
 
@@ -743,6 +818,7 @@ export function DashboardProvider({ children }) {
   const audioMutedRef = useRef(state.audioMuted)
   const floodSuspiciousRef = useRef(state.flood?.suspiciousCount ?? 0)
   const toastSeqRef = useRef(1)
+  const focusRouteSeqRef = useRef(0)
   const wsBatchQueueRef = useRef([])
   const wsBatchTimerRef = useRef(null)
 
@@ -1021,6 +1097,10 @@ export function DashboardProvider({ children }) {
         const updated = await simCloseRoad(road.id)
         if (updated?.id) {
           dispatch({ type: 'APPLY_WS_EVENT', payload: { type: 'road.updated', data: updated } })
+          const reroute = normalizeRoutePayload(updated.reroute || updated)
+          if (reroute && reroute.geometry.length >= 2) {
+            dispatch({ type: 'SET_ACTIVE_ROUTE', payload: reroute })
+          }
         } else {
           await loadSnapshotAndHealth()
         }
@@ -1120,7 +1200,7 @@ export function DashboardProvider({ children }) {
   const handleClearSuspiciousSos = useCallback(async () => {
     try {
       const result = await clearSuspiciousSos()
-      const clearedCount = result?.cleared ?? floodSuspiciousRef.current ?? 0
+      const clearedCount = result?.removed ?? result?.cleared ?? floodSuspiciousRef.current ?? 0
       dispatch({ type: 'CLEAR_SUSPICIOUS_SOS' })
       addToast(t('toast.suspiciousCleared', { count: clearedCount }), 'success')
       return result
@@ -1168,6 +1248,10 @@ export function DashboardProvider({ children }) {
             },
           },
         })
+        const routeUpdate = normalizeRoutePayload(res)
+        if (routeUpdate && routeUpdate.geometry.length >= 2) {
+          dispatch({ type: 'SET_ACTIVE_ROUTE', payload: routeUpdate })
+        }
         addToast(t('toast.providerUpdated', { state: nextState.toUpperCase() }), 'info')
       } catch (err) {
         if (shouldNotifyGenericActionError(err)) {
@@ -1182,6 +1266,7 @@ export function DashboardProvider({ children }) {
     try {
       const result = await simReset()
       dispatch({ type: 'CLEAR_SUSPICIOUS_SOS' })
+      dispatch({ type: 'SET_ACTIVE_ROUTE', payload: null })
       dispatch({
         type: 'APPLY_WS_EVENT',
         payload: {
@@ -1219,10 +1304,29 @@ export function DashboardProvider({ children }) {
     (val) => dispatch({ type: 'TOGGLE_PRIORITY_ONLY_FILTER', payload: val }),
     []
   )
-  const focusMap = useCallback(
-    (focus) => dispatch({ type: 'SET_MAP_FOCUS', payload: focus }),
-    []
-  )
+  const focusMap = useCallback((focus) => {
+    dispatch({ type: 'SET_MAP_FOCUS', payload: focus })
+    const lat = Number(focus?.lat)
+    const lng = Number(focus?.lng)
+    if (!focus?.skipRoute && Number.isFinite(lat) && Number.isFinite(lng)) {
+      const seq = ++focusRouteSeqRef.current
+      getRoute({
+        fromLat: lat,
+        fromLng: lng,
+        shelterId: focus.shelterId || null,
+        profile: focus.profile || 'standard',
+      })
+        .then((routeData) => {
+          if (seq !== focusRouteSeqRef.current) return
+          if (routeData && routeData.geometry.length >= 2) {
+            dispatch({ type: 'SET_ACTIVE_ROUTE', payload: routeData })
+          }
+        })
+        .catch(() => {
+          // Non-fatal: map fallback handles missing route response gracefully
+        })
+    }
+  }, [])
   const setSimTargetCoords = useCallback(
     (coords) => dispatch({ type: 'SET_SIM_TARGET_COORDS', payload: coords }),
     []

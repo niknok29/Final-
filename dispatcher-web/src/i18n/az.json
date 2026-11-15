@@ -140,6 +140,9 @@
       "critical": "Kritik",
       "prioritySos": "Prioritet SOS",
       "closedRoad": "Bağlı yol",
+      "roadblock": "Yol blokadası",
+      "routeExact": "Dəqiq marşrut",
+      "routeApprox": "Təqribi marşrut",
       "shelter": "Sığınacaq",
       "crew": "Briqada"
     },
@@ -153,6 +156,8 @@
       "assignedAlert": "Təyinat",
       "roadClosed": "Bağlı yol",
       "roadOpen": "Açıq yol",
+      "blockReason": "Bloklanma səbəbi",
+      "roadBlockedReasonDefault": "Hərəkət müvəqqəti məhdudlaşdırılıb",
       "accessible": "Əlçatanlıq",
       "accessibleTransport": "Əlçatan nəqliyyat",
       "reportedAt": "Vaxt",
@@ -162,6 +167,12 @@
       "nearestShelter": "Ən yaxın sığınacaq",
       "distanceToTarget": "Hadisəyə məsafə",
       "roadLength": "Uzunluq",
+      "routeTitle": "Təxliyə marşrutu",
+      "routeExact": "Dəqiq küçə həndəsəsi (canlı)",
+      "routeApprox": "Təqribi marşrut (ehtiyat/oflayn rejim)",
+      "routeDistance": "Marşrut məsafəsi",
+      "routeEta": "Təxmini vaxt",
+      "minutesShort": "dəq",
       "yes": "Var (♿)",
       "no": "Yoxdur"
     }

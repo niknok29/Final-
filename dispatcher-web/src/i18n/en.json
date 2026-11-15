@@ -140,6 +140,9 @@
       "critical": "Critical",
       "prioritySos": "Priority SOS",
       "closedRoad": "Closed road",
+      "roadblock": "Roadblock",
+      "routeExact": "Exact route",
+      "routeApprox": "Approx. route",
       "shelter": "Shelter",
       "crew": "Crew"
     },
@@ -153,6 +156,8 @@
       "assignedAlert": "Assignment",
       "roadClosed": "Closed road",
       "roadOpen": "Open road",
+      "blockReason": "Block reason",
+      "roadBlockedReasonDefault": "Traffic temporarily restricted",
       "accessible": "Accessibility",
       "accessibleTransport": "Accessible transport",
       "reportedAt": "Reported",
@@ -162,6 +167,12 @@
       "nearestShelter": "Nearest shelter",
       "distanceToTarget": "Distance to incident",
       "roadLength": "Length",
+      "routeTitle": "Evacuation route",
+      "routeExact": "Exact street geometry (live)",
+      "routeApprox": "Approximate route (backup/offline mode)",
+      "routeDistance": "Route distance",
+      "routeEta": "Est. travel time",
+      "minutesShort": "min",
       "yes": "Yes (♿)",
       "no": "No"
     }

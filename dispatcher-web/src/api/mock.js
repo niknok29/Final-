@@ -32,6 +32,8 @@ function createInitialState() {
       id: 'r1',
       name: 'Neftçilər prospekti',
       status: 'closed',
+      blocked: true,
+      reason: 'Su basması və asfalt çökməsi',
       accessible: true,
       path: [
         [40.3627, 49.8322],
@@ -46,6 +48,8 @@ function createInitialState() {
       id: 'r2',
       name: 'Heydər Əliyev prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3845, 49.8565],
@@ -60,6 +64,8 @@ function createInitialState() {
       id: 'r3',
       name: 'Tbilisi prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3832, 49.8295],
@@ -74,6 +80,8 @@ function createInitialState() {
       id: 'r4',
       name: 'Ziya Bünyadov prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: false,
       path: [
         [40.4148, 49.8345],
@@ -88,6 +96,8 @@ function createInitialState() {
       id: 'r5',
       name: 'Azadlıq prospekti',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: true,
       path: [
         [40.3795, 49.8485],
@@ -102,6 +112,8 @@ function createInitialState() {
       id: 'r6',
       name: '28 May küçəsi',
       status: 'open',
+      blocked: false,
+      reason: null,
       accessible: false,
       path: [
         [40.3772, 49.8445],
@@ -915,6 +927,87 @@ export async function mockGetDashboard() {
 
 export const mockGetSnapshot = mockGetDashboard
 
+function buildStreetWaypoints(fromLat, fromLng, toLat, toLng) {
+  const midLat1 = Number((fromLat + (toLat - fromLat) * 0.34).toFixed(5))
+  const midLng1 = Number((fromLng + (toLng - fromLng) * 0.18).toFixed(5))
+  const midLat2 = Number((fromLat + (toLat - fromLat) * 0.68).toFixed(5))
+  const midLng2 = Number((fromLng + (toLng - fromLng) * 0.82).toFixed(5))
+  return [
+    [Number(fromLat.toFixed(5)), Number(fromLng.toFixed(5))],
+    [midLat1, midLng1],
+    [midLat2, midLng2],
+    [Number(toLat.toFixed(5)), Number(toLng.toFixed(5))],
+  ]
+}
+
+function buildMockRoutePayload({ fromLat, fromLng, shelterId = null, profile = 'standard', reason = null } = {}) {
+  const originLat = Number.isFinite(Number(fromLat)) ? Number(fromLat) : state.sos[0]?.lat ?? 40.3982
+  const originLng = Number.isFinite(Number(fromLng)) ? Number(fromLng) : state.sos[0]?.lng ?? 49.8522
+
+  const special = profile === 'special_needs'
+  const candidatePool = state.shelters.filter(
+    (s) => s.status !== 'closed' && s.status !== 'full' && (!special || s.accessible)
+  )
+  const sortedPool = (candidatePool.length > 0 ? candidatePool : state.shelters)
+    .slice()
+    .sort((a, b) => {
+      const dA = calculateDistanceMeters(originLat, originLng, a.lat, a.lng) ?? Infinity
+      const dB = calculateDistanceMeters(originLat, originLng, b.lat, b.lng) ?? Infinity
+      return dA - dB
+    })
+
+  const requested = shelterId ? state.shelters.find((s) => s.id === shelterId) : null
+  const shelter =
+    requested && requested.status !== 'closed' && requested.status !== 'full'
+      ? requested
+      : sortedPool[0] || state.shelters[0]
+
+  const directDist = Math.round(calculateDistanceMeters(originLat, originLng, shelter.lat, shelter.lng) || 0)
+  const geometryApprox = providerState !== 'up' || breakerState === 'open'
+  const geometry = geometryApprox
+    ? [
+        [Number(originLat.toFixed(5)), Number(originLng.toFixed(5))],
+        [Number(shelter.lat.toFixed(5)), Number(shelter.lng.toFixed(5))],
+      ]
+    : buildStreetWaypoints(originLat, originLng, shelter.lat, shelter.lng)
+
+  const distanceMeters = geometryApprox
+    ? Math.max(100, directDist)
+    : Math.max(100, Math.round(calculatePathLengthMeters(geometry) || directDist * 1.18))
+  const durationSec = Math.max(60, Math.round(distanceMeters / 1.25))
+
+  const alternatives = sortedPool.slice(1, 3).map((alt) => ({
+    shelter: clone(alt),
+    distanceMeters: Math.round(calculateDistanceMeters(originLat, originLng, alt.lat, alt.lng) || 0),
+  }))
+
+  return {
+    shelter: clone(shelter),
+    from: { lat: originLat, lng: originLng },
+    to: { lat: shelter.lat, lng: shelter.lng },
+    route: {
+      distanceMeters,
+      durationSec,
+      path: geometry,
+      geometry,
+      geometryApprox,
+    },
+    geometry,
+    geometryApprox,
+    alternatives,
+    rerouted: Boolean(reason),
+    reason: reason || null,
+    source: geometryApprox ? 'fallback' : 'provider',
+    offline: geometryApprox,
+    fallbackMode: geometryApprox ? fallbackModeState || 'straight_line' : null,
+    notice: geometryApprox ? { code: 'OFFLINE_BACKUP_ROUTE_MODE', message: null } : null,
+  }
+}
+
+export async function mockGetRoute(params = {}) {
+  return clone(buildMockRoutePayload(params))
+}
+
 export async function mockGetRoads() {
   return clone({ items: state.roads })
 }
@@ -1001,7 +1094,11 @@ export async function mockSimSetProvider(nextState) {
   }
   const health = buildMockProviderHealth()
   emitEvent('provider.updated', health)
-  return { ok: true, ...health }
+  const routePayload = buildMockRoutePayload({
+    reason: nextState === 'up' ? 'PROVIDER_RESTORED' : 'PROVIDER_FALLBACK',
+  })
+  emitEvent('reroute', routePayload)
+  return { ok: true, ...health, route: routePayload.route }
 }
 
 export async function mockApproveAlert(alertId) {
@@ -1036,8 +1133,8 @@ export async function mockApproveAlert(alertId) {
   alert.status = 'approved'
   crew.status = 'dispatched'
   crew.assignedAlertId = alert.id
-  crew.lat = Number((alert.lat + 0.0012).toFixed(5))
-  crew.lng = Number((alert.lng - 0.0012).toFixed(5))
+  crew.lat = Number(alert.lat)
+  crew.lng = Number(alert.lng)
   alert.proposal = {
     ...alert.proposal,
     crewId: crew.id,
@@ -1087,14 +1184,22 @@ export async function mockDismissAlert(alertId) {
   return clone({ alert, stats: computeStats() })
 }
 
-export async function mockSimCloseRoad(roadId) {
+export async function mockSimCloseRoad(roadId, reason = 'Fövqəladə təhlükəsizlik blokadası') {
   const road = state.roads.find((r) => r.id === roadId)
   if (!road) {
     throw Object.assign(new Error('Road not found'), { status: 404, code: 'ROAD_NOT_FOUND' })
   }
   road.status = 'closed'
+  road.blocked = true
+  road.reason = sanitizeUserNote(reason || 'Fövqəladə təhlükəsizlik blokadası', 160)
   emitEvent('road.updated', road)
-  return clone(road)
+  const routePayload = buildMockRoutePayload({
+    fromLat: road.path?.[0]?.[0],
+    fromLng: road.path?.[0]?.[1],
+    reason: 'ROAD_CLOSED',
+  })
+  emitEvent('reroute', routePayload)
+  return clone({ ...road, reroute: routePayload })
 }
 
 export async function mockSimOpenRoad(roadId) {
@@ -1103,6 +1208,8 @@ export async function mockSimOpenRoad(roadId) {
     throw Object.assign(new Error('Road not found'), { status: 404, code: 'ROAD_NOT_FOUND' })
   }
   road.status = 'open'
+  road.blocked = false
+  road.reason = null
   emitEvent('road.updated', road)
   return clone(road)
 }
@@ -1119,6 +1226,10 @@ export async function mockSimSetShelterOccupancy(shelterId, percent) {
   shelter.status = deriveShelterStatus(clamped, 'open')
   emitEvent('shelter.updated', shelter)
   triggerOverloadAlertIfNeeded(shelter)
+  if (clamped >= 90) {
+    const routePayload = buildMockRoutePayload({ reason: 'SHELTER_NEARLY_FULL' })
+    emitEvent('reroute', routePayload)
+  }
   return clone(shelter)
 }
 

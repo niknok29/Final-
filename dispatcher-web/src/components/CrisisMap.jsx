@@ -2,6 +2,9 @@ import { memo, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import {
   Circle,
   MapContainer,
@@ -16,6 +19,7 @@ import {
 import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
 import {
+  calculateDistanceMeters,
   calculatePathLengthMeters,
   findCrewTargetDistance,
   findNearestShelter,
@@ -23,6 +27,13 @@ import {
 } from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatClockTime, formatNumber } from '../utils/time.js'
+
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+})
 
 const BAKU_CENTER = [40.4093, 49.8671]
 const DEFAULT_ZOOM = 12
@@ -137,6 +148,89 @@ function getTargetIcon() {
   return icon
 }
 
+function getRoadblockIcon() {
+  const key = 'roadblock'
+  if (iconCache.has(key)) return iconCache.get(key)
+  const icon = L.divIcon({
+    className: 'custom-div-icon',
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -13],
+    html: '<div class="map-roadblock-pin" aria-label="Blocked road">✕</div>',
+  })
+  iconCache.set(key, icon)
+  return icon
+}
+
+function getExactLatLng(item) {
+  if (!item || typeof item !== 'object') return null
+  const rawLat = item.lat ?? item.location?.lat
+  const rawLng = item.lng ?? item.location?.lng
+  if (rawLat === null || rawLat === undefined || rawLat === '' || rawLng === null || rawLng === undefined || rawLng === '') {
+    return null
+  }
+  const lat = Number(rawLat)
+  const lng = Number(rawLng)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return [lat, lng]
+}
+
+function normalizePolylinePoints(path) {
+  if (!Array.isArray(path)) return []
+  return path
+    .map((pt) => {
+      if (Array.isArray(pt) && pt.length >= 2) {
+        const lat = Number(pt[0])
+        const lng = Number(pt[1])
+        return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null
+      }
+      if (pt && typeof pt === 'object') {
+        return getExactLatLng(pt)
+      }
+      return null
+    })
+    .filter(Boolean)
+}
+
+function getPolylineMidpoint(path) {
+  const pts = normalizePolylinePoints(path)
+  if (pts.length === 0) return null
+  if (pts.length === 1) return pts[0]
+
+  let total = 0
+  const segLengths = []
+  for (let i = 1; i < pts.length; i += 1) {
+    const segLen = calculateDistanceMeters(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) || 0
+    segLengths.push(segLen)
+    total += segLen
+  }
+
+  if (total <= 0) {
+    const midIdx = Math.floor((pts.length - 1) / 2)
+    return [
+      Number(((pts[midIdx][0] + pts[midIdx + 1][0]) / 2).toFixed(5)),
+      Number(((pts[midIdx][1] + pts[midIdx + 1][1]) / 2).toFixed(5)),
+    ]
+  }
+
+  const half = total / 2
+  let walked = 0
+  for (let i = 0; i < segLengths.length; i += 1) {
+    const segLen = segLengths[i]
+    if (walked + segLen >= half && segLen > 0) {
+      const ratio = (half - walked) / segLen
+      const a = pts[i]
+      const b = pts[i + 1]
+      return [
+        Number((a[0] + (b[0] - a[0]) * ratio).toFixed(5)),
+        Number((a[1] + (b[1] - a[1]) * ratio).toFixed(5)),
+      ]
+    }
+    walked += segLen
+  }
+  return pts[Math.floor(pts.length / 2)]
+}
+
 function MapController({ mapFocus, sosMarkerRefs }) {
   const map = useMap()
 
@@ -187,6 +281,9 @@ export const CrisisMap = memo(function CrisisMap() {
     sosFilter,
     priorityOnlyFilter,
     mapFocus,
+    activeRoute,
+    routingOffline,
+    routingDegraded,
     simTargetCoords,
     simDrawerOpen,
     setSimTargetCoords,
@@ -208,6 +305,7 @@ export const CrisisMap = memo(function CrisisMap() {
     () =>
       dashboard.sos
         .filter((item) => {
+          if (!getExactLatLng(item)) return false
           const matchesHazard = sosFilter === 'all' ? true : item.type === sosFilter
           if (!matchesHazard) return false
           if (priorityOnlyFilter) {
@@ -220,7 +318,10 @@ export const CrisisMap = memo(function CrisisMap() {
   )
 
   const overlayRoads = useMemo(
-    () => dashboard.roads.filter((r) => Array.isArray(r.path) && r.path.length >= 2),
+    () =>
+      dashboard.roads
+        .map((r) => ({ ...r, cleanPath: normalizePolylinePoints(r.path) }))
+        .filter((r) => r.cleanPath.length >= 2),
     [dashboard.roads]
   )
 
@@ -230,11 +331,47 @@ export const CrisisMap = memo(function CrisisMap() {
         (alert) =>
           (alert.kind === 'SOS_CLUSTER' || alert.kind === 'PRIORITY_SOS') &&
           (alert.status === 'pending' || mapFocus?.alertId === alert.id) &&
-          typeof alert.lat === 'number' &&
-          typeof alert.lng === 'number'
+          Boolean(getExactLatLng(alert))
       ),
     [dashboard.alerts, mapFocus?.alertId]
   )
+
+  const renderedRoute = useMemo(() => {
+    const cleanActive = normalizePolylinePoints(activeRoute?.geometry)
+    if (cleanActive.length >= 2) {
+      return {
+        ...activeRoute,
+        geometry: cleanActive,
+        geometryApprox:
+          typeof activeRoute.geometryApprox === 'boolean'
+            ? activeRoute.geometryApprox
+            : Boolean(routingOffline || routingDegraded),
+      }
+    }
+
+    const focusCoords = getExactLatLng(mapFocus)
+    if (focusCoords && (mapFocus?.sosId || mapFocus?.alertId)) {
+      const requireAcc = mapFocus?.profile === 'special_needs'
+      const nearest = findNearestShelter(
+        focusCoords[0],
+        focusCoords[1],
+        dashboard.shelters,
+        requireAcc
+      )
+      const shelterCoords = nearest ? getExactLatLng(nearest.shelter) : null
+      if (nearest && shelterCoords) {
+        return {
+          geometry: [focusCoords, shelterCoords],
+          geometryApprox: true,
+          distanceMeters: nearest.distanceMeters,
+          durationSec: Math.max(60, Math.round((nearest.distanceMeters || 0) / 1.25)),
+          shelter: nearest.shelter,
+          reason: null,
+        }
+      }
+    }
+    return null
+  }, [activeRoute, dashboard.shelters, mapFocus, routingDegraded, routingOffline])
 
   return (
     <main className="panel panel-map" aria-label="Baku Crisis Map">
@@ -244,9 +381,10 @@ export const CrisisMap = memo(function CrisisMap() {
           zoom={DEFAULT_ZOOM}
           className="crisis-leaflet-map"
           zoomControl={true}
+          attributionControl={true}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
@@ -254,12 +392,14 @@ export const CrisisMap = memo(function CrisisMap() {
           <MapClickHandler onSelectCoords={setSimTargetCoords} />
 
           {dashboard.zones.map((zone) => {
+            const zoneCoords = getExactLatLng(zone)
+            if (!zoneCoords) return null
             const style = ZONE_COLORS[zone.level] || ZONE_COLORS.normal
             const zoneRadius = zone.radiusMeters || 500
             return (
               <Circle
                 key={zone.id}
-                center={[zone.lat, zone.lng]}
+                center={zoneCoords}
                 radius={zoneRadius}
                 pathOptions={{
                   color: style.color,
@@ -291,6 +431,8 @@ export const CrisisMap = memo(function CrisisMap() {
           })}
 
           {alertCircles.map((alert) => {
+            const alertCoords = getExactLatLng(alert)
+            if (!alertCoords) return null
             const alertRadius = alert.details?.radiusMeters || 500
             const zoneLabel = sanitizeUserNote(
               alert.zoneName || zoneNamesById[alert.zoneId] || alert.zoneId || '-',
@@ -299,7 +441,7 @@ export const CrisisMap = memo(function CrisisMap() {
             return (
               <Circle
                 key={`alert-radius-${alert.id}`}
-                center={[alert.lat, alert.lng]}
+                center={alertCoords}
                 radius={alertRadius}
                 pathOptions={{
                   color: '#ef4444',
@@ -328,16 +470,22 @@ export const CrisisMap = memo(function CrisisMap() {
           })}
 
           {overlayRoads.map((road) => {
-            const isClosed = road.status === 'closed'
+            const isClosed =
+              road.status === 'closed' || road.status === 'blocked' || road.blocked === true
             const isInaccessible = road.accessible === false
-            const roadLengthMeters = road.lengthMeters || calculatePathLengthMeters(road.path)
+            const roadLengthMeters = road.lengthMeters || calculatePathLengthMeters(road.cleanPath)
             const lengthLabel = formatDistance(roadLengthMeters, lang)
+            const blockReason = sanitizeUserNote(
+              road.reason || road.blockReason || t('map.popup.roadBlockedReasonDefault'),
+              160
+            )
+
             const pathOptions = isClosed
               ? {
                   color: '#ef4444',
                   weight: 5,
                   dashArray: '10 8',
-                  opacity: 0.92,
+                  opacity: 0.95,
                 }
               : isInaccessible
                 ? {
@@ -353,7 +501,7 @@ export const CrisisMap = memo(function CrisisMap() {
                   }
 
             return (
-              <Polyline key={road.id} positions={road.path} pathOptions={pathOptions}>
+              <Polyline key={road.id} positions={road.cleanPath} pathOptions={pathOptions}>
                 <Tooltip sticky>
                   {sanitizeUserNote(road.name, 60)} ({lengthLabel}) •{' '}
                   {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')} •{' '}
@@ -369,6 +517,11 @@ export const CrisisMap = memo(function CrisisMap() {
                       {t('map.popup.status')}:{' '}
                       {isClosed ? t('map.popup.roadClosed') : t('map.popup.roadOpen')}
                     </div>
+                    {isClosed && (
+                      <div>
+                        {t('map.popup.blockReason')}: {blockReason}
+                      </div>
+                    )}
                     <div>
                       {t('map.popup.accessible')}:{' '}
                       {isInaccessible ? t('map.popup.no') : t('map.popup.yes')}
@@ -379,12 +532,116 @@ export const CrisisMap = memo(function CrisisMap() {
             )
           })}
 
+          {overlayRoads.map((road) => {
+            const isClosed =
+              road.status === 'closed' || road.status === 'blocked' || road.blocked === true
+            if (!isClosed) return null
+            const blockPoint =
+              getExactLatLng({
+                lat: road.blockageLat ?? road.lat,
+                lng: road.blockageLng ?? road.lng,
+              }) || getPolylineMidpoint(road.cleanPath)
+            if (!blockPoint) return null
+            const roadLengthMeters = road.lengthMeters || calculatePathLengthMeters(road.cleanPath)
+            const lengthLabel = formatDistance(roadLengthMeters, lang)
+            const blockReason = sanitizeUserNote(
+              road.reason || road.blockReason || t('map.popup.roadBlockedReasonDefault'),
+              160
+            )
+            return (
+              <Marker
+                key={`roadblock-${road.id}`}
+                position={blockPoint}
+                icon={getRoadblockIcon()}
+                zIndexOffset={450}
+              >
+                <Tooltip>
+                  {sanitizeUserNote(road.name, 50)} — {t('map.popup.roadClosed')} ({blockReason})
+                </Tooltip>
+                <Popup>
+                  <div className="map-popup">
+                    <div className="map-popup-priority">{t('map.popup.roadClosed')}</div>
+                    <strong>{sanitizeUserNote(road.name, 80)}</strong>
+                    <div>
+                      {t('map.popup.blockReason')}: {blockReason}
+                    </div>
+                    <div>
+                      {t('map.popup.roadLength')}: {lengthLabel}
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            )
+          })}
+
+          {renderedRoute && renderedRoute.geometry.length >= 2 && (
+            <Polyline
+              key={`active-route-${renderedRoute.geometryApprox ? 'approx' : 'exact'}`}
+              positions={renderedRoute.geometry}
+              pathOptions={
+                renderedRoute.geometryApprox
+                  ? {
+                      color: '#d97706',
+                      weight: 4,
+                      dashArray: '8 6',
+                      opacity: 0.92,
+                    }
+                  : {
+                      color: '#0284c7',
+                      weight: 5,
+                      opacity: 0.92,
+                    }
+              }
+            >
+              <Tooltip sticky>
+                {t('map.popup.routeTitle')} •{' '}
+                {renderedRoute.geometryApprox
+                  ? t('map.popup.routeApprox')
+                  : t('map.popup.routeExact')}
+                {renderedRoute.distanceMeters != null
+                  ? ` (${formatDistance(renderedRoute.distanceMeters, lang)})`
+                  : ''}
+              </Tooltip>
+              <Popup>
+                <div className="map-popup">
+                  <strong>{t('map.popup.routeTitle')}</strong>
+                  <div>
+                    {renderedRoute.geometryApprox
+                      ? t('map.popup.routeApprox')
+                      : t('map.popup.routeExact')}
+                  </div>
+                  {renderedRoute.shelter?.name && (
+                    <div>
+                      {t('map.popup.nearestShelter')}:{' '}
+                      {sanitizeUserNote(renderedRoute.shelter.name, 60)}
+                    </div>
+                  )}
+                  {renderedRoute.distanceMeters != null && (
+                    <div>
+                      {t('map.popup.routeDistance')}:{' '}
+                      {formatDistance(renderedRoute.distanceMeters, lang)}
+                    </div>
+                  )}
+                  {renderedRoute.durationSec != null && (
+                    <div>
+                      {t('map.popup.routeEta')}:{' '}
+                      {Math.max(1, Math.ceil(renderedRoute.durationSec / 60))}{' '}
+                      {t('map.popup.minutesShort')}
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            </Polyline>
+          )}
+
           {dashboard.shelters.map((shelter) => {
+            const shelterCoords = getExactLatLng(shelter)
+            if (!shelterCoords) return null
             const pct = shelter.occupancyPercent ?? shelter.percent ?? 0
             return (
               <Marker
                 key={shelter.id}
-                position={[shelter.lat, shelter.lng]}
+                position={shelterCoords}
                 icon={getShelterIcon(shelter.status, pct, Boolean(shelter.accessible))}
               >
                 <Popup>
@@ -421,6 +678,8 @@ export const CrisisMap = memo(function CrisisMap() {
           })}
 
           {dashboard.crews.map((crew) => {
+            const crewCoords = getExactLatLng(crew)
+            if (!crewCoords) return null
             const crewDist = findCrewTargetDistance(
               crew,
               dashboard.alerts,
@@ -430,7 +689,7 @@ export const CrisisMap = memo(function CrisisMap() {
             return (
               <Marker
                 key={crew.id}
-                position={[crew.lat, crew.lng]}
+                position={crewCoords}
                 icon={getCrewIcon(crew.status, Boolean(crew.accessibleTransport))}
               >
                 <Popup>
@@ -465,16 +724,23 @@ export const CrisisMap = memo(function CrisisMap() {
           })}
 
           {visibleSos.map((item) => {
+            const sosCoords = getExactLatLng(item)
+            if (!sosCoords) return null
             const isPriority = item.profile === 'special_needs' || item.priorityRank === 1
             const zoneLabel = sanitizeUserNote(
               item.zoneName || zoneNamesById[item.zoneId] || item.zoneId || '',
               40
             )
-            const nearest = findNearestShelter(item.lat, item.lng, dashboard.shelters, isPriority)
+            const nearest = findNearestShelter(
+              sosCoords[0],
+              sosCoords[1],
+              dashboard.shelters,
+              isPriority
+            )
             return (
               <Marker
                 key={item.id}
-                position={[item.lat, item.lng]}
+                position={sosCoords}
                 icon={getSosIcon(item.type, isPriority)}
                 zIndexOffset={isPriority ? 600 : 0}
                 ref={(el) => {
@@ -511,7 +777,7 @@ export const CrisisMap = memo(function CrisisMap() {
                       </div>
                     )}
                     <div className="map-popup-coords">
-                      {Number(item.lat).toFixed(5)}, {Number(item.lng).toFixed(5)}
+                      {sosCoords[0].toFixed(5)}, {sosCoords[1].toFixed(5)}
                     </div>
                   </div>
                 </Popup>
@@ -519,9 +785,9 @@ export const CrisisMap = memo(function CrisisMap() {
             )
           })}
 
-          {showSimTarget && (
+          {showSimTarget && getExactLatLng(simTargetCoords) && (
             <Marker
-              position={[simTargetCoords.lat, simTargetCoords.lng]}
+              position={getExactLatLng(simTargetCoords)}
               icon={getTargetIcon()}
             />
           )}
@@ -548,6 +814,18 @@ export const CrisisMap = memo(function CrisisMap() {
             <span className="legend-item">
               <i className="legend-line-closed" />
               {t('map.legend.closedRoad')}
+            </span>
+            <span className="legend-item">
+              <i className="legend-roadblock-badge">✕</i>
+              {t('map.legend.roadblock')}
+            </span>
+            <span className="legend-item">
+              <i className="legend-line-route-exact" />
+              {t('map.legend.routeExact')}
+            </span>
+            <span className="legend-item">
+              <i className="legend-line-route-approx" />
+              {t('map.legend.routeApprox')}
             </span>
             <span className="legend-item">
               <i className="legend-square legend-shelter" />
