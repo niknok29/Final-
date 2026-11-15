@@ -1,4 +1,6 @@
 import { memo, useEffect, useMemo, useRef } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { Accessibility } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -27,6 +29,7 @@ import {
 } from '../utils/geo.js'
 import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatClockTime, formatNumber } from '../utils/time.js'
+const ACC_SVG = renderToStaticMarkup(<Accessibility size={12} strokeWidth={2.5} />)
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({
@@ -39,29 +42,29 @@ const BAKU_CENTER = [40.4093, 49.8671]
 const DEFAULT_ZOOM = 12
 
 const ZONE_COLORS = {
-  normal: { color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.1 },
-  warning: { color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.16 },
-  critical: { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.22 },
+  normal: { color: '#2e7d32', fillColor: '#2e7d32', fillOpacity: 0.1 },
+  warning: { color: '#b26a00', fillColor: '#b26a00', fillOpacity: 0.16 },
+  critical: { color: '#c62828', fillColor: '#c62828', fillOpacity: 0.22 },
 }
 
 const HAZARD_META = {
-  fire: { color: '#ef4444', short: 'F' },
-  collapse: { color: '#f59e0b', short: 'C' },
-  flood: { color: '#38bdf8', short: 'W' },
-  medical: { color: '#ec4899', short: 'M' },
+  fire: { color: '#c62828', short: 'F' },
+  collapse: { color: '#b26a00', short: 'C' },
+  flood: { color: '#0b4f8a', short: 'W' },
+  medical: { color: '#5b6776', short: 'M' },
 }
 
 const SHELTER_COLORS = {
-  open: '#22c55e',
+  open: '#2e7d32',
   filling: '#eab308',
   near_full: '#f97316',
-  full: '#ef4444',
+  full: '#c62828',
   closed: '#64748b',
 }
 
 const CREW_COLORS = {
-  available: '#22c55e',
-  dispatched: '#38bdf8',
+  available: '#2e7d32',
+  dispatched: '#0b4f8a',
   busy: '#a855f7',
 }
 
@@ -79,7 +82,7 @@ function getSosIcon(type, isPriority = false) {
       iconSize: [38, 38],
       iconAnchor: [19, 19],
       popupAnchor: [0, -19],
-      html: `<div class="map-sos-pin map-sos-pin-priority" style="background:${meta.color};">♿</div>`,
+      html: `<div class="map-sos-pin map-sos-pin-priority" style="background:${meta.color};">${ACC_SVG}</div>`,
     })
     iconCache.set(key, icon)
     return icon
@@ -104,7 +107,7 @@ function getShelterIcon(status, percent, accessible = false) {
 
   const color = SHELTER_COLORS[safeStatus]
   const label = safeStatus === 'closed' ? 'OFF' : `${safePct}%`
-  const accTag = accessible ? '<span class="map-acc-badge">♿</span>' : ''
+  const accTag = accessible ? `<span class="map-acc-badge">${ACC_SVG}</span>` : ''
   const icon = L.divIcon({
     className: 'custom-div-icon',
     iconSize: [accessible ? 58 : 44, 24],
@@ -122,7 +125,7 @@ function getCrewIcon(status, accessibleTransport = false) {
   if (iconCache.has(key)) return iconCache.get(key)
 
   const color = CREW_COLORS[safeStatus]
-  const symbol = accessibleTransport ? '★♿' : '★'
+  const symbol = accessibleTransport ? '★A' : '★'
   const width = accessibleTransport ? 36 : 26
   const icon = L.divIcon({
     className: 'custom-div-icon',
@@ -444,8 +447,8 @@ export const CrisisMap = memo(function CrisisMap() {
                 center={alertCoords}
                 radius={alertRadius}
                 pathOptions={{
-                  color: '#ef4444',
-                  fillColor: '#ef4444',
+                  color: '#c62828',
+                  fillColor: '#c62828',
                   fillOpacity: 0.14,
                   weight: 2,
                   dashArray: '6 4',
@@ -482,20 +485,20 @@ export const CrisisMap = memo(function CrisisMap() {
 
             const pathOptions = isClosed
               ? {
-                  color: '#ef4444',
+                  color: '#c62828',
                   weight: 5,
                   dashArray: '10 8',
                   opacity: 0.95,
                 }
               : isInaccessible
                 ? {
-                    color: '#f59e0b',
+                    color: '#b26a00',
                     weight: 4,
                     dashArray: '4 6',
                     opacity: 0.8,
                   }
                 : {
-                    color: '#22c55e',
+                    color: '#2e7d32',
                     weight: 3,
                     opacity: 0.48,
                   }
@@ -574,6 +577,15 @@ export const CrisisMap = memo(function CrisisMap() {
             )
           })}
 
+          {renderedRoute && renderedRoute.geometry.length >= 2 && !renderedRoute.geometryApprox && (
+            <Polyline
+              key="active-route-casing"
+              positions={renderedRoute.geometry}
+              pathOptions={{ color: '#ffffff', weight: 9, opacity: 1 }}
+              interactive={false}
+            />
+          )}
+
           {renderedRoute && renderedRoute.geometry.length >= 2 && (
             <Polyline
               key={`active-route-${renderedRoute.geometryApprox ? 'approx' : 'exact'}`}
@@ -581,13 +593,13 @@ export const CrisisMap = memo(function CrisisMap() {
               pathOptions={
                 renderedRoute.geometryApprox
                   ? {
-                      color: '#d97706',
+                      color: '#b26a00',
                       weight: 4,
                       dashArray: '8 6',
                       opacity: 0.92,
                     }
                   : {
-                      color: '#0284c7',
+                      color: '#0b4f8a',
                       weight: 5,
                       opacity: 0.92,
                     }
@@ -647,7 +659,7 @@ export const CrisisMap = memo(function CrisisMap() {
                 <Popup>
                   <div className="map-popup">
                     <strong>
-                      {shelter.accessible ? '♿ ' : ''}
+                      {shelter.accessible ? <Accessibility size={12} aria-hidden="true" /> : null}
                       {sanitizeUserNote(shelter.name, 80)}
                     </strong>
                     {(shelter.zoneName || zoneNamesById[shelter.zoneId]) && (
@@ -695,7 +707,7 @@ export const CrisisMap = memo(function CrisisMap() {
                 <Popup>
                   <div className="map-popup">
                     <strong>
-                      {crew.accessibleTransport ? '♿ ' : ''}
+                      {crew.accessibleTransport ? <Accessibility size={12} aria-hidden="true" /> : null}
                       {sanitizeUserNote(crew.name, 80)}
                     </strong>
                     <div>
@@ -808,7 +820,7 @@ export const CrisisMap = memo(function CrisisMap() {
               {t('map.legend.critical')}
             </span>
             <span className="legend-item">
-              <span aria-hidden="true">♿</span>
+              <Accessibility size={12} aria-hidden="true" />
               {t('map.legend.prioritySos')}
             </span>
             <span className="legend-item">

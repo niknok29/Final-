@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { Siren } from 'lucide-react'
 import { USE_MOCK } from '../api/client.js'
 import { canSimulate } from '../auth/permissions.js'
 import { useDashboard } from '../state/dashboardStore.js'
@@ -59,7 +60,7 @@ export function Header() {
     <header className="ctrl-header">
       <div className="ctrl-header-left">
         <div className="brand-mark" aria-hidden="true">
-          <span className="brand-dot" />
+          <Siren size={18} aria-hidden="true" />
         </div>
         <div className="brand-text">
           <h1 className="brand-title">{t('app.shortTitle')}</h1>

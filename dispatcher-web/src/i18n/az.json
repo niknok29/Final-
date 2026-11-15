@@ -1,8 +1,8 @@
 {
   "app": {
     "title": "Şəhər Böhranı və Təxliyə Mərkəzi",
-    "shortTitle": "Bakı Böhran İdarəetməsi",
-    "subtitle": "Digital Challenge 2026 Azərbaycan — Dispetçer İdarəetmə Paneli",
+    "shortTitle": "Böhran və Təxliyə Mühərriki",
+    "subtitle": "Dispetçer paneli",
     "mockMode": "MOCK REJİMİ"
   },
   "login": {
@@ -75,14 +75,14 @@
   },
   "alerts": {
     "redAlert": "QIRMIZI XƏBƏRDARLIQ",
-    "prioritySosAlert": "♿ PRİORİTET SOS",
+    "prioritySosAlert": "PRİORİTET SOS",
     "pendingCount": "{{count}} gözləyən xəbərdarlıq",
     "zone": "Zona",
     "trigger": "Səbəb",
     "proposal": "Təklif olunan tədbir",
     "assignCrew": "Briqada: {{crew}}",
     "openShelter": "Yeni sığınacaq: {{shelter}}",
-    "accessibleTransportBadge": "♿ əlçatan nəqliyyat",
+    "accessibleTransportBadge": "əlçatan nəqliyyat",
     "noCrewProposed": "Uyğun briqada gözlənilir",
     "triggerCluster": "{{count}} SOS / {{minutes}} dəq / {{radius}} m",
     "triggerOverload": "Toplanış məntəqəsi {{percent}}%",
@@ -102,8 +102,8 @@
     "empty": "Seçilmiş filtr üzrə aktiv SOS siqnalı yoxdur.",
     "noNote": "Əlavə qeyd yoxdur.",
     "flyHint": "Xəritədə baxmaq üçün klikləyin",
-    "priorityBadge": "♿ PRİORİTET #1",
-    "priorityOnly": "♿ Yalnız prioritet",
+    "priorityBadge": "PRİORİTET #1",
+    "priorityOnly": "Yalnız prioritet",
     "nearestShelter": "Ən yaxın sığınacaq: {{name}} ({{distance}})",
     "filters": {
       "all": "Hamısı",
@@ -161,7 +161,7 @@
       "accessible": "Əlçatanlıq",
       "accessibleTransport": "Əlçatan nəqliyyat",
       "reportedAt": "Vaxt",
-      "priorityCritical": "♿ Prioritet #1 (Xüsusi ehtiyac)",
+      "priorityCritical": "Prioritet #1 (Xüsusi ehtiyac)",
       "radius": "Radius",
       "alertRadius": "Klaster radiusu",
       "nearestShelter": "Ən yaxın sığınacaq",
@@ -173,7 +173,7 @@
       "routeDistance": "Marşrut məsafəsi",
       "routeEta": "Təxmini vaxt",
       "minutesShort": "dəq",
-      "yes": "Var (♿)",
+      "yes": "Var",
       "no": "Yoxdur"
     }
   },
@@ -186,9 +186,9 @@
     "assignedTo": "Təyinat: {{id}}",
     "unassigned": "Sərbəst növbə",
     "distanceToIncident": "Hadisəyə məsafə: {{distance}}",
-    "accessible": "♿ Əlçatan",
+    "accessible": "Əlçatan",
     "notAccessible": "Məhdud giriş",
-    "accessibleTransport": "♿ Əlçatan nəqliyyat",
+    "accessibleTransport": "Əlçatan nəqliyyat",
     "zoneLevels": {
       "normal": "Normal",
       "warning": "Xəbərdarlıq",

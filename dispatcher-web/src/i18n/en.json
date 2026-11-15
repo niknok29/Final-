@@ -1,8 +1,8 @@
 {
   "app": {
     "title": "Urban Crisis & Evacuation Engine",
-    "shortTitle": "Baku Crisis Control Room",
-    "subtitle": "Digital Challenge 2026 Azerbaijan — Dispatcher Command Center",
+    "shortTitle": "Böhran və Təxliyə Mühərriki",
+    "subtitle": "Dispatcher console",
     "mockMode": "MOCK MODE"
   },
   "login": {
@@ -75,14 +75,14 @@
   },
   "alerts": {
     "redAlert": "RED ALERT",
-    "prioritySosAlert": "♿ PRIORITY SOS",
+    "prioritySosAlert": "PRIORITY SOS",
     "pendingCount": "{{count}} pending alerts",
     "zone": "Zone",
     "trigger": "Trigger",
     "proposal": "Recommended Action",
     "assignCrew": "Crew: {{crew}}",
     "openShelter": "Open shelter: {{shelter}}",
-    "accessibleTransportBadge": "♿ accessible transport",
+    "accessibleTransportBadge": "accessible transport",
     "noCrewProposed": "Awaiting eligible crew",
     "triggerCluster": "{{count}} SOS / {{minutes}} min / {{radius}} m",
     "triggerOverload": "Shelter occupancy {{percent}}%",
@@ -102,8 +102,8 @@
     "empty": "No active SOS signals match this filter.",
     "noNote": "No additional note.",
     "flyHint": "Click to focus on map",
-    "priorityBadge": "♿ PRIORITY #1",
-    "priorityOnly": "♿ Priority only",
+    "priorityBadge": "PRIORITY #1",
+    "priorityOnly": "Priority only",
     "nearestShelter": "Nearest shelter: {{name}} ({{distance}})",
     "filters": {
       "all": "All",
@@ -161,7 +161,7 @@
       "accessible": "Accessibility",
       "accessibleTransport": "Accessible transport",
       "reportedAt": "Reported",
-      "priorityCritical": "♿ Priority #1 (Special needs)",
+      "priorityCritical": "Priority #1 (Special needs)",
       "radius": "Radius",
       "alertRadius": "Cluster radius",
       "nearestShelter": "Nearest shelter",
@@ -173,7 +173,7 @@
       "routeDistance": "Route distance",
       "routeEta": "Est. travel time",
       "minutesShort": "min",
-      "yes": "Yes (♿)",
+      "yes": "Yes",
       "no": "No"
     }
   },
@@ -186,9 +186,9 @@
     "assignedTo": "Assigned: {{id}}",
     "unassigned": "Standing by",
     "distanceToIncident": "To incident: {{distance}}",
-    "accessible": "♿ Accessible",
+    "accessible": "Accessible",
     "notAccessible": "Not step-free",
-    "accessibleTransport": "♿ Accessible transport",
+    "accessibleTransport": "Accessible transport",
     "zoneLevels": {
       "normal": "Normal",
       "warning": "Warning",

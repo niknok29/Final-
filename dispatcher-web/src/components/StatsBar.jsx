@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { Accessibility } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useDashboard } from '../state/dashboardStore.js'
 import { formatNumber } from '../utils/time.js'
@@ -21,7 +22,7 @@ export const StatsBar = memo(function StatsBar() {
 
       <div className={`stat-card ${priorityCount > 0 ? 'stat-card-priority' : ''}`}>
         <span className="stat-label">
-          <span aria-hidden="true">♿ </span>
+          <Accessibility size={14} aria-hidden="true" />
           {t('stats.prioritySos')}
         </span>
         <strong className="stat-value">{formatNumber(priorityCount, lang)}</strong>

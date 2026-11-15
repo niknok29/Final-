@@ -6,10 +6,8 @@ import { sanitizeUserNote } from '../utils/sanitize.js'
 import { formatNumber } from '../utils/time.js'
 
 function getShelterBarColor(status, percent) {
-  if (status === 'closed') return 'bar-closed'
-  if (status === 'full' || percent >= 100) return 'bar-full'
-  if (status === 'near_full' || percent >= 90) return 'bar-near-full'
-  if (status === 'filling' || percent >= 75) return 'bar-filling'
+  if (status === 'closed' || percent >= 90) return 'bar-full'
+  if (percent >= 70) return 'bar-filling'
   return 'bar-open'
 }
 
