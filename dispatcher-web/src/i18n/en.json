@@ -1,0 +1,167 @@
+{
+  "app": {
+    "title": "Urban Crisis & Evacuation Engine",
+    "shortTitle": "Baku Crisis Control Room",
+    "subtitle": "Digital Challenge 2026 Azerbaijan — Dispatcher Command Center",
+    "mockMode": "MOCK MODE"
+  },
+  "login": {
+    "heading": "Dispatcher Sign In",
+    "subheading": "Access the Baku emergency coordination control room",
+    "username": "Username",
+    "usernamePlaceholder": "dispatcher or admin",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "submit": "Sign In",
+    "submitting": "Authenticating...",
+    "demoTitle": "Demo accounts (click to autofill):",
+    "demoDispatcher": "Dispatcher: dispatcher / dispatcher123",
+    "demoAdmin": "Admin: admin / admin123",
+    "error401": "Invalid username or password.",
+    "errorGeneric": "Unable to sign in. Please try again."
+  },
+  "header": {
+    "live": "Live",
+    "reconnecting": "Reconnecting...",
+    "routingLabel": "Routing",
+    "routingUp": "UP",
+    "routingDown": "DOWN",
+    "muteAudio": "Mute alerts",
+    "unmuteAudio": "Unmute alerts",
+    "simulationBtn": "Simulation",
+    "logout": "Logout",
+    "roles": {
+      "dispatcher": "Dispatcher",
+      "admin": "Admin"
+    }
+  },
+  "stats": {
+    "activeSos": "Active SOS",
+    "pendingAlerts": "Pending Red Alerts",
+    "shelters": "Shelters (Full / Total)",
+    "crews": "Crews (Available / Total)"
+  },
+  "alerts": {
+    "redAlert": "RED ALERT",
+    "pendingCount": "{{count}} pending alerts",
+    "zone": "Zone",
+    "trigger": "Trigger",
+    "proposal": "Recommended Action",
+    "assignCrew": "Crew: {{crew}}",
+    "openShelter": "Open shelter: {{shelter}}",
+    "approve": "Approve",
+    "dismiss": "Dismiss",
+    "processing": "Processing...",
+    "noPermission": "You do not have permission to act on alerts.",
+    "approvedBadge": "Approved"
+  },
+  "sos": {
+    "title": "Live SOS Feed",
+    "count": "{{count}} signals",
+    "empty": "No active SOS signals match this filter.",
+    "noNote": "No additional note.",
+    "flyHint": "Click to focus on map",
+    "filters": {
+      "all": "All",
+      "fire": "Fire",
+      "collapse": "Collapse",
+      "flood": "Flood",
+      "medical": "Medical"
+    },
+    "types": {
+      "fire": "Fire",
+      "collapse": "Collapse",
+      "flood": "Flood",
+      "medical": "Medical"
+    },
+    "status": {
+      "active": "Active",
+      "dispatched": "Dispatched",
+      "resolved": "Resolved"
+    }
+  },
+  "time": {
+    "justNow": "just now",
+    "secondsAgo": "{{count}}s ago",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago"
+  },
+  "map": {
+    "simTarget": "Sim target",
+    "clickHint": "Click anywhere on the map to set 4-SOS burst coordinates",
+    "legend": {
+      "normal": "Normal zone",
+      "warning": "Warning",
+      "critical": "Critical",
+      "closedRoad": "Closed road",
+      "shelter": "Shelter",
+      "crew": "Crew"
+    },
+    "popup": {
+      "zone": "Zone",
+      "activeSos": "Active SOS",
+      "level": "Level",
+      "coords": "Coordinates",
+      "occupancy": "Occupancy",
+      "status": "Status",
+      "assignedAlert": "Assignment",
+      "roadClosed": "Closed road"
+    }
+  },
+  "rightPanel": {
+    "zonesTitle": "Zones",
+    "sheltersTitle": "Evacuation Shelters",
+    "crewsTitle": "Response Crews",
+    "sosCount": "{{count}} SOS",
+    "capacityCount": "{{occupancy}} / {{capacity}}",
+    "assignedTo": "Assigned: {{id}}",
+    "unassigned": "Standing by",
+    "zoneLevels": {
+      "normal": "Normal",
+      "warning": "Warning",
+      "critical": "Critical"
+    },
+    "shelterStatuses": {
+      "open": "Open",
+      "filling": "Filling",
+      "near_full": "Near Full",
+      "full": "Full",
+      "closed": "Closed"
+    },
+    "crewStatuses": {
+      "available": "Available",
+      "dispatched": "Dispatched",
+      "busy": "Busy"
+    }
+  },
+  "sim": {
+    "title": "Simulation Control Panel",
+    "closeDrawer": "Close",
+    "roadSection": "Road Closures",
+    "selectRoad": "Select road",
+    "closeRoad": "Close Road",
+    "openRoad": "Open Road",
+    "shelterSection": "Shelter Occupancy",
+    "selectShelter": "Select shelter",
+    "occupancyPercent": "Occupancy: {{percent}}%",
+    "setOccupancy": "Set Occupancy",
+    "burstSection": "SOS Cluster Burst (4 SOS)",
+    "hazardType": "Hazard type",
+    "targetCoords": "Target: {{lat}}, {{lng}}",
+    "sendBurst": "Send 4 SOS Burst",
+    "resetSection": "Reset",
+    "resetBtn": "Reset Simulation"
+  },
+  "toast": {
+    "alertApproved": "Alert approved: {{crew}} dispatched, {{shelter}} opened.",
+    "alertDismissed": "Alert dismissed.",
+    "rateLimit": "Rate limit exceeded (429). Please wait a few seconds.",
+    "roadClosed": "Road closed: {{road}}",
+    "roadOpened": "Road reopened: {{road}}",
+    "shelterUpdated": "{{shelter}} occupancy updated to {{percent}}%.",
+    "sosBurstSent": "4 SOS signals generated at target location.",
+    "simReset": "Simulation state reset to baseline.",
+    "reconnected": "Live connection restored and dashboard resynced.",
+    "actionError": "Failed to complete action."
+  }
+}

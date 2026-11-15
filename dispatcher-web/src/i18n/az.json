@@ -1,0 +1,167 @@
+{
+  "app": {
+    "title": "Şəhər Böhranı və Təxliyə Mərkəzi",
+    "shortTitle": "Bakı Böhran İdarəetməsi",
+    "subtitle": "Digital Challenge 2026 Azərbaycan — Dispetçer İdarəetmə Paneli",
+    "mockMode": "MOCK REJİMİ"
+  },
+  "login": {
+    "heading": "Dispetçer Girişi",
+    "subheading": "Bakı şəhəri fövqəladə koordinasiya sisteminə daxil olun",
+    "username": "İstifadəçi adı",
+    "usernamePlaceholder": "dispatcher və ya admin",
+    "password": "Şifrə",
+    "passwordPlaceholder": "Şifrəni daxil edin",
+    "submit": "Daxil ol",
+    "submitting": "Yoxlanılır...",
+    "demoTitle": "Demo hesablar (doldurmaq üçün klikləyin):",
+    "demoDispatcher": "Dispetçer: dispatcher / dispatcher123",
+    "demoAdmin": "Admin: admin / admin123",
+    "error401": "İstifadəçi adı və ya şifrə yanlışdır.",
+    "errorGeneric": "Giriş zamanı xəta baş verdi. Yenidən cəhd edin."
+  },
+  "header": {
+    "live": "Canlı",
+    "reconnecting": "Yenidən qoşulur...",
+    "routingLabel": "Marşrutlaşdırma",
+    "routingUp": "UP",
+    "routingDown": "DOWN",
+    "muteAudio": "Səsi bağla",
+    "unmuteAudio": "Səsi aç",
+    "simulationBtn": "Simulyasiya",
+    "logout": "Çıxış",
+    "roles": {
+      "dispatcher": "Dispetçer",
+      "admin": "Admin"
+    }
+  },
+  "stats": {
+    "activeSos": "Aktiv SOS",
+    "pendingAlerts": "Gözləyən Qırmızı Xəbərdarlıq",
+    "shelters": "Sığınacaqlar (Dolu / Cəmi)",
+    "crews": "Briqadalar (Hazır / Cəmi)"
+  },
+  "alerts": {
+    "redAlert": "QIRMIZI XƏBƏRDARLIQ",
+    "pendingCount": "{{count}} gözləyən xəbərdarlıq",
+    "zone": "Zona",
+    "trigger": "Səbəb",
+    "proposal": "Təklif olunan tədbir",
+    "assignCrew": "Briqada: {{crew}}",
+    "openShelter": "Yeni sığınacaq: {{shelter}}",
+    "approve": "Təsdiq et",
+    "dismiss": "Ləğv et",
+    "processing": "İcra olunur...",
+    "noPermission": "Bu əməliyyat üçün icazəniz yoxdur.",
+    "approvedBadge": "Təsdiqləndi"
+  },
+  "sos": {
+    "title": "Canlı SOS Axını",
+    "count": "{{count}} siqnal",
+    "empty": "Seçilmiş filtr üzrə aktiv SOS siqnalı yoxdur.",
+    "noNote": "Əlavə qeyd yoxdur.",
+    "flyHint": "Xəritədə baxmaq üçün klikləyin",
+    "filters": {
+      "all": "Hamısı",
+      "fire": "Yanğın",
+      "collapse": "Uçqun",
+      "flood": "Daşqın",
+      "medical": "Tibbi"
+    },
+    "types": {
+      "fire": "Yanğın",
+      "collapse": "Uçqun",
+      "flood": "Daşqın",
+      "medical": "Tibbi"
+    },
+    "status": {
+      "active": "Aktiv",
+      "dispatched": "Yönləndirilib",
+      "resolved": "Həll edilib"
+    }
+  },
+  "time": {
+    "justNow": "indicə",
+    "secondsAgo": "{{count}} san əvvəl",
+    "minutesAgo": "{{count}} dəq əvvəl",
+    "hoursAgo": "{{count}} saat əvvəl"
+  },
+  "map": {
+    "simTarget": "Simulyasiya hədəfi",
+    "clickHint": "4 SOS nöqtəsi seçmək üçün xəritəyə klikləyin",
+    "legend": {
+      "normal": "Normal zona",
+      "warning": "Diqqət",
+      "critical": "Kritik",
+      "closedRoad": "Bağlı yol",
+      "shelter": "Sığınacaq",
+      "crew": "Briqada"
+    },
+    "popup": {
+      "zone": "Zona",
+      "activeSos": "Aktiv SOS",
+      "level": "Səviyyə",
+      "coords": "Koordinatlar",
+      "occupancy": "Doluluq",
+      "status": "Status",
+      "assignedAlert": "Təyinat",
+      "roadClosed": "Bağlı yol"
+    }
+  },
+  "rightPanel": {
+    "zonesTitle": "Zonalar",
+    "sheltersTitle": "Toplanış Məntəqələri",
+    "crewsTitle": "Cavab Briqadaları",
+    "sosCount": "{{count}} SOS",
+    "capacityCount": "{{occupancy}} / {{capacity}}",
+    "assignedTo": "Təyinat: {{id}}",
+    "unassigned": "Sərbəst növbə",
+    "zoneLevels": {
+      "normal": "Normal",
+      "warning": "Xəbərdarlıq",
+      "critical": "Kritik"
+    },
+    "shelterStatuses": {
+      "open": "Açıq",
+      "filling": "Dolur",
+      "near_full": "Dolmaq üzrə",
+      "full": "Dolu",
+      "closed": "Bağlı"
+    },
+    "crewStatuses": {
+      "available": "Hazır",
+      "dispatched": "Yola çıxıb",
+      "busy": "Məşğul"
+    }
+  },
+  "sim": {
+    "title": "Simulyasiya İdarəetmə Paneli",
+    "closeDrawer": "Bağla",
+    "roadSection": "Yolların Bağlanması / Açılması",
+    "selectRoad": "Yol seçin",
+    "closeRoad": "Yolu bağla",
+    "openRoad": "Yolu aç",
+    "shelterSection": "Sığınacaq Doluluğu",
+    "selectShelter": "Sığınacaq seçin",
+    "occupancyPercent": "Doluluq: {{percent}}%",
+    "setOccupancy": "Doluluğu təyin et",
+    "burstSection": "SOS Kütləvi Siqnal (4 SOS)",
+    "hazardType": "Hadisə növü",
+    "targetCoords": "Hədəf koordinat: {{lat}}, {{lng}}",
+    "sendBurst": "4 SOS Göndər",
+    "resetSection": "Bərpa",
+    "resetBtn": "Simulyasiyanı Sıfırla"
+  },
+  "toast": {
+    "alertApproved": "Xəbərdarlıq təsdiqləndi: {{crew}} yönləndirildi, {{shelter}} açıldı.",
+    "alertDismissed": "Xəbərdarlıq ləğv edildi.",
+    "rateLimit": "Çox sayda sorğu (429). Zəhmət olmasa bir neçə saniyə gözləyin.",
+    "roadClosed": "Yol bağlandı: {{road}}",
+    "roadOpened": "Yol açıldı: {{road}}",
+    "shelterUpdated": "{{shelter}} doluluğu {{percent}}% olaraq yeniləndi.",
+    "sosBurstSent": "Seçilmiş nöqtədə 4 yeni SOS siqnalı yaradıldı.",
+    "simReset": "Simulyasiya ilkin vəziyyətə qaytarıldı.",
+    "reconnected": "Canlı əlaqə bərpa edildi və məlumatlar yeniləndi.",
+    "actionError": "Əməliyyat zamanı xəta baş verdi."
+  }
+}

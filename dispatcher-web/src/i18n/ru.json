@@ -1,0 +1,167 @@
+{
+  "app": {
+    "title": "Центр управления кризисами и эвакуацией",
+    "shortTitle": "Диспетчерская Баку",
+    "subtitle": "Digital Challenge 2026 Азербайджан — Панель диспетчера",
+    "mockMode": "MOCK РЕЖИМ"
+  },
+  "login": {
+    "heading": "Вход для диспетчера",
+    "subheading": "Доступ к системе координации чрезвычайных ситуаций г. Баку",
+    "username": "Имя пользователя",
+    "usernamePlaceholder": "dispatcher или admin",
+    "password": "Пароль",
+    "passwordPlaceholder": "Введите пароль",
+    "submit": "Войти",
+    "submitting": "Вход...",
+    "demoTitle": "Демо-аккаунты (нажмите для заполнения):",
+    "demoDispatcher": "Диспетчер: dispatcher / dispatcher123",
+    "demoAdmin": "Админ: admin / admin123",
+    "error401": "Неверное имя пользователя или пароль.",
+    "errorGeneric": "Ошибка входа. Попробуйте еще раз."
+  },
+  "header": {
+    "live": "В сети",
+    "reconnecting": "Переподключение...",
+    "routingLabel": "Маршрутизация",
+    "routingUp": "UP",
+    "routingDown": "DOWN",
+    "muteAudio": "Выключить звук",
+    "unmuteAudio": "Включить звук",
+    "simulationBtn": "Симуляция",
+    "logout": "Выход",
+    "roles": {
+      "dispatcher": "Диспетчер",
+      "admin": "Админ"
+    }
+  },
+  "stats": {
+    "activeSos": "Активные SOS",
+    "pendingAlerts": "Красные тревоги",
+    "shelters": "Убежища (Заполн. / Всего)",
+    "crews": "Бригады (Доступно / Всего)"
+  },
+  "alerts": {
+    "redAlert": "КРАСНАЯ ТРЕВОГА",
+    "pendingCount": "Активных тревог: {{count}}",
+    "zone": "Зона",
+    "trigger": "Причина",
+    "proposal": "Предлагаемое решение",
+    "assignCrew": "Бригада: {{crew}}",
+    "openShelter": "Открыть пункт: {{shelter}}",
+    "approve": "Подтвердить",
+    "dismiss": "Отклонить",
+    "processing": "Выполнение...",
+    "noPermission": "Недостаточно прав для действия.",
+    "approvedBadge": "Подтверждено"
+  },
+  "sos": {
+    "title": "Лента SOS в реальном времени",
+    "count": "Сигналов: {{count}}",
+    "empty": "Нет активных SOS сигналов по выбранному фильтру.",
+    "noNote": "Дополнительная заметка отсутствует.",
+    "flyHint": "Нажмите для перехода на карте",
+    "filters": {
+      "all": "Все",
+      "fire": "Пожар",
+      "collapse": "Обвал",
+      "flood": "Наводнение",
+      "medical": "Медпомощь"
+    },
+    "types": {
+      "fire": "Пожар",
+      "collapse": "Обвал",
+      "flood": "Наводнение",
+      "medical": "Медпомощь"
+    },
+    "status": {
+      "active": "Активен",
+      "dispatched": "Направлен",
+      "resolved": "Решен"
+    }
+  },
+  "time": {
+    "justNow": "только что",
+    "secondsAgo": "{{count}}с назад",
+    "minutesAgo": "{{count}}м назад",
+    "hoursAgo": "{{count}}ч назад"
+  },
+  "map": {
+    "simTarget": "Цель симуляции",
+    "clickHint": "Нажмите на карту для выбора координат всплеска 4 SOS",
+    "legend": {
+      "normal": "Нормальная зона",
+      "warning": "Внимание",
+      "critical": "Критическая",
+      "closedRoad": "Закрытая дорога",
+      "shelter": "Пункт сбора",
+      "crew": "Бригада"
+    },
+    "popup": {
+      "zone": "Зона",
+      "activeSos": "Активные SOS",
+      "level": "Уровень",
+      "coords": "Координаты",
+      "occupancy": "Заполненность",
+      "status": "Статус",
+      "assignedAlert": "Назначение",
+      "roadClosed": "Дорога закрыта"
+    }
+  },
+  "rightPanel": {
+    "zonesTitle": "Зоны",
+    "sheltersTitle": "Пункты сбора",
+    "crewsTitle": "Бригады реагирования",
+    "sosCount": "{{count}} SOS",
+    "capacityCount": "{{occupancy}} / {{capacity}}",
+    "assignedTo": "Назначение: {{id}}",
+    "unassigned": "В резерве",
+    "zoneLevels": {
+      "normal": "Норма",
+      "warning": "Внимание",
+      "critical": "Критично"
+    },
+    "shelterStatuses": {
+      "open": "Открыт",
+      "filling": "Заполняется",
+      "near_full": "Почти полон",
+      "full": "Заполнен",
+      "closed": "Закрыт"
+    },
+    "crewStatuses": {
+      "available": "Доступна",
+      "dispatched": "Выехала",
+      "busy": "Занята"
+    }
+  },
+  "sim": {
+    "title": "Панель управления симуляцией",
+    "closeDrawer": "Закрыть",
+    "roadSection": "Перекрытие дорог",
+    "selectRoad": "Выберите дорогу",
+    "closeRoad": "Закрыть дорогу",
+    "openRoad": "Открыть дорогу",
+    "shelterSection": "Заполненность убежищ",
+    "selectShelter": "Выберите убежище",
+    "occupancyPercent": "Заполненность: {{percent}}%",
+    "setOccupancy": "Применить",
+    "burstSection": "Всплеск SOS (4 сигнала)",
+    "hazardType": "Тип инцидента",
+    "targetCoords": "Координаты: {{lat}}, {{lng}}",
+    "sendBurst": "Отправить 4 SOS",
+    "resetSection": "Сброс",
+    "resetBtn": "Сбросить симуляцию"
+  },
+  "toast": {
+    "alertApproved": "Тревога подтверждена: бригада {{crew}} направлена, {{shelter}} открыт.",
+    "alertDismissed": "Тревога отклонена.",
+    "rateLimit": "Превышен лимит запросов (429). Подождите несколько секунд.",
+    "roadClosed": "Дорога закрыта: {{road}}",
+    "roadOpened": "Дорога открыта: {{road}}",
+    "shelterUpdated": "Заполненность {{shelter}} изменена на {{percent}}%.",
+    "sosBurstSent": "Созданы 4 новых SOS сигнала в выбранной точке.",
+    "simReset": "Симуляция сброшена к исходному состоянию.",
+    "reconnected": "Соединение восстановлено, данные синхронизированы.",
+    "actionError": "Ошибка выполнения операции."
+  }
+}
